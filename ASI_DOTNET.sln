@@ -5,6 +5,8 @@ VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ASI_DOTNET", "ASI_DOTNET\ASI_DOTNET.csproj", "{915C2761-BC8F-496A-A2EF-781826183CF2}"
 EndProject
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "ASI_pyautocad", "ASI_pyautocad\ASI_pyautocad.pyproj", "{9AAD5A06-EB9F-46D7-92D0-0CE4763A8BFB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{915C2761-BC8F-496A-A2EF-781826183CF2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{915C2761-BC8F-496A-A2EF-781826183CF2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{915C2761-BC8F-496A-A2EF-781826183CF2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9AAD5A06-EB9F-46D7-92D0-0CE4763A8BFB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9AAD5A06-EB9F-46D7-92D0-0CE4763A8BFB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9AAD5A06-EB9F-46D7-92D0-0CE4763A8BFB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9AAD5A06-EB9F-46D7-92D0-0CE4763A8BFB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
