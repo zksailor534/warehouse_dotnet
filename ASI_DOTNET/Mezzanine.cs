@@ -11,9 +11,9 @@ using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Windows;
 
-[assembly: CommandClass(typeof(ASI_DOTNET.Column))]
+[assembly: CommandClass(typeof(ASI.Column))]
 
-namespace ASI_DOTNET
+namespace ASI
 {
     class Column
     {
