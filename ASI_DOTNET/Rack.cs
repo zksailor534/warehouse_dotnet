@@ -122,7 +122,7 @@ namespace ASI_DOTNET
                         for (int i = 1; i <= bNum; i++)
                         {
                             // Create swept brace at origin
-                            Solid3d aBrace = Utils.SweepPolylineOverLine(acCurDb, bPoly, bPath);
+                            Solid3d aBrace = Utils.SweepPolylineOverLine(bPoly, bPath);
 
                             // Calculate location
                             double aBxLoc = (fDiameter / 2) - (bSize / 2);
@@ -165,14 +165,9 @@ namespace ASI_DOTNET
         }
 
 
-        [CommandMethod("CreateRack")]
-        public static void CreateRack()
+        [CommandMethod("RackPrompt")]
+        public static void RackPrompt()
         {
-            // Frame default characteristics
-            double height = 96;
-            double width = 48;
-            double diameter = 3;
-
             // Get the current document and database, and start a transaction
             // !!! Move this outside function
             Document acDoc = Application.DocumentManager.MdiActiveDocument;
@@ -182,8 +177,9 @@ namespace ASI_DOTNET
             PromptDoubleResult heightRes;
             PromptDistanceOptions heightOpts = new PromptDistanceOptions("");
             heightOpts.Message = "\nEnter the frame height: ";
+            heightOpts.DefaultValue = 96;
             heightRes = acDoc.Editor.GetDistance(heightOpts);
-            height = heightRes.Value;
+            double height = heightRes.Value;
 
             // Exit if the user presses ESC or cancels the command
             if (heightRes.Status != PromptStatus.OK) return;
@@ -192,8 +188,9 @@ namespace ASI_DOTNET
             PromptDoubleResult widthRes;
             PromptDistanceOptions widthOpts = new PromptDistanceOptions("");
             widthOpts.Message = "\nEnter the frame width: ";
+            widthOpts.DefaultValue = 36;
             widthRes = acDoc.Editor.GetDistance(widthOpts);
-            width = widthRes.Value;
+            double width = widthRes.Value;
 
             // Exit if the user presses ESC or cancels the command
             if (widthRes.Status != PromptStatus.OK) return;
@@ -204,7 +201,7 @@ namespace ASI_DOTNET
             diameterOpts.Message = "\nEnter the frame width: ";
             diameterOpts.DefaultValue = 3.0;
             diameterRes = acDoc.Editor.GetDistance(diameterOpts);
-            diameter = diameterRes.Value;
+            double diameter = diameterRes.Value;
 
             // Exit if the user presses ESC or cancels the command
             if (diameterRes.Status != PromptStatus.OK) return;

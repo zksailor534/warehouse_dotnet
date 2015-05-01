@@ -13,10 +13,9 @@ using Autodesk.AutoCAD.Windows;
 
 namespace ASI_DOTNET
 {
-    class Utils
+    public static class Utils
     {
-        public static Solid3d SweepPolylineOverLine(Database db,
-            Polyline p,
+        public static Solid3d SweepPolylineOverLine(Polyline p,
             Line l)
         {
             /// Create a region from the polyline
@@ -33,6 +32,47 @@ namespace ASI_DOTNET
             solSweep.CreateSweptSolid(region, l, sob.ToSweepOptions());
 
             return solSweep;
+        }
+
+        public static Solid3d ExtrudePolyline(Polyline p,
+            double height,
+            double taperAngle = 0)
+        {
+            /// Create a region from the polyline
+            DBObjectCollection acDBObjColl = new DBObjectCollection();
+            acDBObjColl.Add(p);
+            DBObjectCollection myRegionColl = new DBObjectCollection();
+            myRegionColl = Region.CreateFromCurves(acDBObjColl);
+            Region region = myRegionColl[0] as Region;
+
+            /// Create 3D solid and sweep existing region along path
+            Solid3d solExt = new Solid3d();
+            solExt.Extrude(region, height, taperAngle);
+
+            return solExt;
+        }
+
+        public static Solid3d ExtrudeCircle(Circle c,
+            double height,
+            double taperAngle = 0)
+        {
+            /// Create a region from the polyline
+            DBObjectCollection acDBObjColl = new DBObjectCollection();
+            acDBObjColl.Add(c);
+            DBObjectCollection myRegionColl = new DBObjectCollection();
+            myRegionColl = Region.CreateFromCurves(acDBObjColl);
+            Region region = myRegionColl[0] as Region;
+
+            /// Create 3D solid and sweep existing region along path
+            Solid3d solExt = new Solid3d();
+            solExt.Extrude(region, height, taperAngle);
+
+            return solExt;
+        }
+
+        public static double ToRadians(this double val)
+        {
+            return (Math.PI / 180) * val;
         }
     }
 }
