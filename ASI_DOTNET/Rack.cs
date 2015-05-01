@@ -74,11 +74,11 @@ namespace ASI_DOTNET
                         double bSpace = 0;
                         double bAngle, bLeftOver;
                         double bSize = 1;
-                        for (bNum = 1; bNum <= Convert.ToInt32(fHeight / 12); bNum++)
+                        for (bNum = Convert.ToInt32(fHeight / 12); bNum >= 1; bNum--)
                         {
                             bSpace = Math.Floor((fHeight - (bNum + 1) * bSize) / bNum);
                             bAngle = Math.Atan2(bSpace - bSize, fWidth - (2 * fDiameter));
-                            if (bAngle < Math.PI / 4)
+                            if ((bAngle < Math.PI / 3) && (bSpace >= fWidth))
                             {
                                 break;
                             }

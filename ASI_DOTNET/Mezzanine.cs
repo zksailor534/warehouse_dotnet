@@ -801,8 +801,6 @@ namespace ASI_DOTNET
 
                 while (tOthersRes.Status == PromptStatus.OK)
                 {
-                    Application.ShowAlertDialog("Keyword: " + tOthersRes.StringResult);
-
                     switch (tOthersRes.StringResult)
                     {
                         case "Orientation":
