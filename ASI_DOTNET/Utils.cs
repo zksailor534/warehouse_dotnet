@@ -7,14 +7,101 @@ using System.Threading.Tasks;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
-using Autodesk.AutoCAD.Geometry;
-using Autodesk.AutoCAD.EditorInput;
-using Autodesk.AutoCAD.Windows;
+using Autodesk.AutoCAD.Colors;
 
 namespace ASI_DOTNET
 {
     public static class Utils
     {
+        public static void SetBlockObjectProperties(Entity ent)
+        {
+            // Set layer and properties
+            ent.Layer = "0";
+            ent.Color = ChooseColor("ByBlock");
+            ent.Linetype = "ByBlock";
+            ent.LineWeight = LineWeight.ByBlock;
+        }
+
+        public static void CreateLayer(Database db,
+            string name,
+            Color color)
+        {
+            // Start a transaction
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
+            {
+                // Returns the layer table for the current database
+                LayerTable acLyrTbl;
+                acLyrTbl = acTrans.GetObject(db.LayerTableId,
+                                            OpenMode.ForWrite) as LayerTable;
+ 
+                if (acLyrTbl.Has(name) == false)
+                {
+                    LayerTableRecord acLyrTblRec = new LayerTableRecord();
+ 
+                    // Assign the layer the color and name
+                    acLyrTblRec.Name = name;
+                    acLyrTblRec.Color = color;
+ 
+                    // Upgrade the Layer table for write
+                    acLyrTbl.UpgradeOpen();
+ 
+                    // Append the new layer to the Layer table and the transaction
+                    acLyrTbl.Add(acLyrTblRec);
+                    acTrans.AddNewlyCreatedDBObject(acLyrTblRec, true);
+                }
+ 
+                // Save changes and dispose of the transaction
+                acTrans.Commit();
+            }
+        }
+
+        public static Color ChooseColor(string name)
+        {
+            short id = 7;
+
+            switch (name)
+            {
+                case "red":
+                    id = 1;
+                    break;
+                case "yellow":
+                    id = 2;
+                    break;
+                case "green":
+                    id = 3;
+                    break;
+                case "cyan":
+                    id = 4;
+                    break;
+                case "blue":
+                    id = 5;
+                    break;
+                case "magenta":
+                    id = 6;
+                    break;
+                case "white":
+                    id = 7;
+                    break;
+                case "orange":
+                    id = 30;
+                    break;
+                case "black":
+                    id = 250;
+                    break;
+                case "ByBlock":
+                    id = 0;
+                    break;
+                case "ByLayer":
+                    id = 256;
+                    break;
+                default:
+                    Application.ShowAlertDialog("Invalid Color Name: " + name);
+                    break;
+            }
+
+            return Color.FromColorIndex(ColorMethod.ByAci, id);
+        }
+
         public static Solid3d SweepPolylineOverLine(Polyline p,
             Line l)
         {

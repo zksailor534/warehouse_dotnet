@@ -10,6 +10,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Windows;
+using Autodesk.AutoCAD.Colors;
 
 [assembly: CommandClass(typeof(ASI_DOTNET.Frame))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Beam))]
@@ -221,6 +222,8 @@ namespace ASI_DOTNET
         public string name { get; private set; }
         public string orientation { get; private set; }
         public string style { get; private set; }
+        public string layerName { get; private set; }
+        public ObjectId id { get; private set; }
 
         // Public constructor
         public Beam (Database db,
@@ -237,6 +240,11 @@ namespace ASI_DOTNET
             this.orientation = orient;
             this.style = style;
             this.name = "Rack Beam - " + length + "x" + height;
+
+            // Create beam layer (if necessary)
+            this.layerName = "2D-Rack-Beam";
+            Color layerColor = Utils.ChooseColor("blue");
+            Utils.CreateLayer(db, layerName, layerColor);
         }
 
         public void Build()
@@ -277,13 +285,20 @@ namespace ASI_DOTNET
                         // Create beam
                         Solid3d beamSolid = Utils.SweepPolylineOverLine(beamPoly, beamLine);
 
+                        // Add entity to Block Table Record
                         acBlkTblRec.AppendEntity(beamSolid);
 
-                        /// Add Block to Block Table and close Transaction
+                        // Set block properties
+                        Utils.SetBlockObjectProperties(beamSolid);
+
+                        /// Add Block to Block Table and Transaction
                         acBlkTbl.UpgradeOpen();
                         acBlkTbl.Add(acBlkTblRec);
                         acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
                     }
+
+                    // Set block id property
+                    this.id = acBlkTbl[name];
 
                 }
                 // Save the new object to the database
@@ -456,6 +471,7 @@ namespace ASI_DOTNET
                 width: width,
                 orient: orientation,
                 style: style);
+
             rackBeam.Build();
         }
                         
