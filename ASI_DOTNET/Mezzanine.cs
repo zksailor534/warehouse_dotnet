@@ -206,7 +206,10 @@ namespace ASI_DOTNET
         public double chordThickness { get; private set; }
         public double chordNearEndLength { get; private set; }
         public double chordFarEndLength { get; private set; }
+        public double bottomChordLength { get; private set; }
         public double rodDiameter { get; private set; }
+        public double rodEndLength { get; private set; }
+        public double rodMidLength { get; private set; }
         public double rodEndAngle { get; private set; }
         public double rodMidAngle { get; private set; }
         public string name { get; private set; }
@@ -231,6 +234,17 @@ namespace ASI_DOTNET
             this.rodMidAngle = data["rodMidAngle"];
             this.orientation = orient;
             this.name = "Truss - " + trussLength + "x" + trussHeight;
+
+            // Calculate truss bottom length
+            this.bottomChordLength = trussLength - chordNearEndLength - chordFarEndLength
+                    - 2 * (trussHeight - 3 * chordWidth) * Math.Tan(rodEndAngle)
+                    + 2 * rodDiameter / Math.Cos(rodEndAngle);
+
+            // Calculate end rod length
+            this.rodEndLength = (trussHeight - 2 * chordWidth) / Math.Cos(rodEndAngle);
+
+            // Calculate mid rod length
+            this.rodMidLength = (trussHeight - chordWidth) / Math.Cos(rodMidAngle);
 
             // Create beam layer (if necessary)
             this.layerName = "2D-Mezz-Truss";
@@ -289,8 +303,32 @@ namespace ASI_DOTNET
                         acBlkTblRec.AppendEntity(cEndFar1);
                         acBlkTblRec.AppendEntity(cEndFar2);
 
-                        // Add angled cross-braces to the block
-                        angleBraces(acBlkTblRec, height, diameter, braceData);
+                        // Create bottom chords
+                        Solid3d cBottom1 = TrussBottomChord(trussLength, trussHeight, chordWidth,
+                            chordThickness, bottomChordLength, rodDiameter, orientation);
+                        Solid3d cBottom2 = TrussBottomChord(trussLength, trussHeight, chordWidth,
+                            chordThickness, bottomChordLength, rodDiameter, orientation, mirror: true);
+
+                        // Add top chords to block
+                        acBlkTblRec.AppendEntity(cBottom1);
+                        acBlkTblRec.AppendEntity(cBottom2);
+
+                        // Create truss end rods
+                        Solid3d rEndNear = TrussEndRod(trussHeight, chordWidth, chordNearEndLength,
+                            rodEndLength, rodDiameter, rodEndAngle, orientation);
+                        Solid3d rEndFar = TrussEndRod(trussHeight, chordWidth, trussLength - chordFarEndLength,
+                            rodEndLength, rodDiameter, -rodEndAngle, orientation);
+
+                        // Add top chords to block
+                        acBlkTblRec.AppendEntity(rEndNear);
+                        acBlkTblRec.AppendEntity(rEndFar);
+
+                        // Create and add truss end rods
+                        TrussMidRods(acBlkTblRec, trussHeight, chordWidth,
+                            rodDiameter, rodMidLength, rodMidAngle,
+                            rodIntersectPoint(rEndNear, rodDiameter, rodEndAngle, orientation, "near"),
+                            rodIntersectPoint(rEndFar, rodDiameter, rodEndAngle, orientation, "far"),
+                            orientation);
 
                         /// Add Block to Block Table and close Transaction
                         acBlkTbl.UpgradeOpen();
@@ -307,7 +345,7 @@ namespace ASI_DOTNET
             }
         }
 
-        public static Solid3d CreateTrussChord(double x1,
+        private static Solid3d CreateTrussChord(double x1,
             double x2,
             double y1,
             double y2,
@@ -439,7 +477,12 @@ namespace ASI_DOTNET
                 rotateAxis, chordVec, mirror: mirror);
         }
 
-        public static Solid3d TrussBottomChord(Dictionary<string, double> data,
+        private static Solid3d TrussBottomChord(double trussLength,
+            double trussHeight,
+            double chordWidth,
+            double chordThickness,
+            double chordLength,
+            double rodDiameter,
             string orientation = "Y-Axis",
             bool mirror = false)
         {
@@ -453,42 +496,32 @@ namespace ASI_DOTNET
             double cY1;
             double cY2;
 
-            // Calculate truss values
-            if (!data.ContainsKey("bottomChordLength"))
-            {
-                data.Add("bottomChordLength", data["trussLength"]
-                    - data["chordNearEndLength"]
-                    - data["chordFarEndLength"]
-                    - 2 * (data["trussHeight"] - 3 * data["chordWidth"]) * Math.Tan(data["rodEndAngle"])
-                    + 2 * data["rodDiameter"] / Math.Cos(data["rodEndAngle"]));
-            }
-
             if (orientation == "X-Axis")
             {
                 rotateAxis = Vector3d.YAxis;
                 rotateAngle = Math.PI / 2;
-                chordVec = new Vector3d((data["trussLength"] - data["bottomChordLength"]) / 2,
-                    data["rodDiameter"] / 2,
-                    -(data["trussHeight"] - 2 * data["chordWidth"]));
-                cX1 = -data["chordWidth"];
-                cX2 = -data["chordThickness"];
-                cY1 = data["chordThickness"];
-                cY2 = data["chordWidth"];
+                chordVec = new Vector3d((trussLength - chordLength) / 2,
+                    rodDiameter / 2,
+                    -(trussHeight - 2 * chordWidth));
+                cX1 = -chordWidth;
+                cX2 = -chordThickness;
+                cY1 = chordThickness;
+                cY2 = chordWidth;
             }
             else // assume y orientation
             {
                 rotateAxis = Vector3d.XAxis;
                 rotateAngle = -Math.PI / 2;
-                chordVec = new Vector3d(data["rodDiameter"] / 2,
-                    (data["trussLength"] - data["bottomChordLength"]) / 2,
-                    -(data["trussHeight"] - 2 * data["chordWidth"]));
-                cX1 = data["chordWidth"];
-                cX2 = data["chordThickness"];
-                cY1 = -data["chordThickness"];
-                cY2 = -data["chordWidth"];
+                chordVec = new Vector3d(rodDiameter / 2,
+                    (trussLength - chordLength) / 2,
+                    -(trussHeight - 2 * chordWidth));
+                cX1 = chordWidth;
+                cX2 = chordThickness;
+                cY1 = -chordThickness;
+                cY2 = -chordWidth;
             }
 
-            return CreateTrussChord(cX1, cX2, cY1, cY2, data["bottomChordLength"], rotateAngle,
+            return CreateTrussChord(cX1, cX2, cY1, cY2, chordLength, rotateAngle,
                 rotateAxis, chordVec, mirror: mirror);
         }
 
@@ -563,8 +596,14 @@ namespace ASI_DOTNET
             
         }
 
-        public static void TrussMidRods(BlockTableRecord btr,
-            Dictionary<string, double> data,
+        private static void TrussMidRods(BlockTableRecord btr,
+            double trussHeight,
+            double chordWidth,
+            double rodDiameter,
+            double rodLength,
+            double rodAngle,
+            Tuple<double, double> nearPt,
+            Tuple<double, double> farPt,
             string orient = "Y-Axis")
         {
             // Declare variable stubs
@@ -573,21 +612,18 @@ namespace ASI_DOTNET
             Vector3d rotateAxis;
             double rotateAngle;
 
-
-            // Calculate mid rod length and horizontal location (does not change)
-            data.Add("rodMidLength", (data["trussHeight"] - data["chordWidth"])
-                / Math.Cos(data["rodMidAngle"]));
-            double rodVerticalLocation = 2 * data["chordWidth"] - data["trussHeight"] / 2;
+            // Calculate mid rod vertical location
+            double rodVerticalLocation = 2 * chordWidth - trussHeight / 2;
 
             // Calculate mid rod horizontal length (for loop)
-            double rodHorizontalLength = data["rodMidLength"] * Math.Sin(data["rodMidAngle"])
-                + data["rodDiameter"] / Math.Cos(data["rodMidAngle"]);
+            double rodHorizontalLength = rodLength * Math.Sin(rodAngle)
+                + rodDiameter / Math.Cos(rodAngle);
 
             // Calculate near and far mid rod locations
-            double rodNearHorizontalLocation = (data["rodEndNearMaxPtD"] + data["rodDiameter"] / (2 * Math.Cos(data["rodMidAngle"])))
-                - Math.Tan(-data["rodMidAngle"]) * (data["rodEndNearMaxPtH"] - rodVerticalLocation);
-            double rodFarHorizontalLocation = (data["rodEndFarMinPtD"] - data["rodDiameter"] / (2 * Math.Cos(data["rodMidAngle"])))
-                + Math.Tan(data["rodMidAngle"]) * (rodVerticalLocation - data["rodEndFarMinPtH"]);
+            double rodNearHorizontalLocation = (nearPt.Item1 + rodDiameter / (2 * Math.Cos(rodAngle)))
+                - Math.Tan(-rodAngle) * (nearPt.Item2 - rodVerticalLocation);
+            double rodFarHorizontalLocation = (farPt.Item1 - rodDiameter / (2 * Math.Cos(rodAngle)))
+                + Math.Tan(rodAngle) * (rodVerticalLocation - farPt.Item2);
 
             if (orient == "X-Axis")
             {
@@ -598,7 +634,7 @@ namespace ASI_DOTNET
                     0,
                     rodVerticalLocation);
                 rotateAxis = Vector3d.YAxis;
-                rotateAngle = -data["rodMidAngle"];
+                rotateAngle = -rodAngle;
             }
             else
             {
@@ -609,13 +645,13 @@ namespace ASI_DOTNET
                     rodFarHorizontalLocation,
                     rodVerticalLocation);
                 rotateAxis = Vector3d.XAxis;
-                rotateAngle = data["rodMidAngle"];
+                rotateAngle = rodAngle;
             }
 
             // Create mid end rods
-            Solid3d rodNear = CreateTrussRod(data["rodDiameter"], data["rodMidLength"],
+            Solid3d rodNear = CreateTrussRod(rodDiameter, rodLength,
                 rodNearEndVec, rotateAngle, rotateAxis);
-            Solid3d rodFar = CreateTrussRod(data["rodDiameter"], data["rodMidLength"],
+            Solid3d rodFar = CreateTrussRod(rodDiameter, rodLength,
                 rodFarEndVec, -rotateAngle, rotateAxis);
 
             // Add mid end rods to block
@@ -623,17 +659,17 @@ namespace ASI_DOTNET
             btr.AppendEntity(rodFar);
 
             // Loop to create remaining rods
-            double space = rodIntersectPoint(rodFar, data["rodDiameter"], rotateAngle, orient, "far").Item1
-                - rodIntersectPoint(rodNear, data["rodDiameter"], rotateAngle, orient, "near").Item1;
+            double space = rodIntersectPoint(rodFar, rodDiameter, rotateAngle, orient, "far").Item1
+                - rodIntersectPoint(rodNear, rodDiameter, rotateAngle, orient, "near").Item1;
             while (space >= rodHorizontalLength)
             {
                 // Switch rotate angle (alternates rod angles)
                 rotateAngle = -rotateAngle;
 
                 // Calculate near and far rod locations
-                rodNearHorizontalLocation = rodIntersectPoint(rodNear, data["rodDiameter"], rotateAngle, orient, "near").Item1
+                rodNearHorizontalLocation = rodIntersectPoint(rodNear, rodDiameter, rotateAngle, orient, "near").Item1
                     + rodHorizontalLength / 2;
-                rodFarHorizontalLocation = rodIntersectPoint(rodFar, data["rodDiameter"], rotateAngle, orient, "far").Item1
+                rodFarHorizontalLocation = rodIntersectPoint(rodFar, rodDiameter, rotateAngle, orient, "far").Item1
                     - rodHorizontalLength / 2;
 
                 if (orient == "X-Axis")
@@ -656,7 +692,7 @@ namespace ASI_DOTNET
                 }
 
                 // Create near mid rod
-                rodNear = CreateTrussRod(data["rodDiameter"], data["rodMidLength"],
+                rodNear = CreateTrussRod(rodDiameter, rodLength,
                     rodNearEndVec, rotateAngle, rotateAxis);
                 btr.AppendEntity(rodNear);
                 space -= rodHorizontalLength;
@@ -665,122 +701,54 @@ namespace ASI_DOTNET
                 if (space < rodHorizontalLength) { break; }
 
                 // Create far mid rod (if space allows)
-                rodFar = CreateTrussRod(data["rodDiameter"], data["rodMidLength"],
+                rodFar = CreateTrussRod(rodDiameter, rodLength,
                     rodFarEndVec, -rotateAngle, rotateAxis);
                 btr.AppendEntity(rodFar);
                 space -= rodHorizontalLength;
             }
         }
 
-        public static void TrussEndRods(BlockTableRecord btr,
-            Dictionary<string, double> data,
+        private static Solid3d TrussEndRod(double trussHeight,
+            double chordWidth,
+            double rodStartLocation,
+            double rodLength,
+            double rodDiameter,
+            double rodAngle,
             string orient = "Y-Axis")
         {
             // Declare variable stubs
-            Vector3d rodNearEndVec;
-            Vector3d rodFarEndVec;
+            Vector3d rodVec;
             Vector3d rotateAxis;
             double rotateAngle;
 
             // Calculate end rod locations
-            data.Add("rodEndLength", (data["trussHeight"] - 2 * data["chordWidth"])
-                / Math.Cos(data["rodEndAngle"]));
-            double rodHorizontalLocation = ((data["trussHeight"] - 3 * data["chordWidth"]) * Math.Tan(data["rodEndAngle"])
-                - data["rodDiameter"] / Math.Cos(data["rodEndAngle"])) / 2;
-            double rodVerticalLocation = data["chordWidth"] - (data["trussHeight"] - data["chordWidth"]) / 2;
+            double rodHorizontalOffset = Math.Sign(rodAngle) * ((trussHeight - 3 * chordWidth)
+                * Math.Tan(Math.Abs(rodAngle)) - rodDiameter / Math.Cos(Math.Abs(rodAngle))) / 2;
+            double rodVerticalLocation = chordWidth - (trussHeight - chordWidth) / 2;
+            double rodHorizontalLocation = rodStartLocation + rodHorizontalOffset;
+
+            Application.ShowAlertDialog("rodHorizontalLocation: " + rodHorizontalLocation + "\n" +
+                "rodHorizontalOffset: " + rodHorizontalOffset + "\n" +
+                "rodStartLocation: " + rodStartLocation + "\n" +
+                "rodAngle: " + rodAngle);
 
             if (orient == "X-Axis")
             {
-                rodNearEndVec = new Vector3d(data["chordNearEndLength"] + rodHorizontalLocation,
-                    0,
-                    rodVerticalLocation);
-                rodFarEndVec = new Vector3d(data["trussLength"] - (data["chordFarEndLength"] + rodHorizontalLocation),
-                    0,
-                    rodVerticalLocation);
+                rodVec = new Vector3d(rodHorizontalLocation, 0, rodVerticalLocation);
                 rotateAxis = Vector3d.YAxis;
-                rotateAngle = -data["rodEndAngle"];
+                rotateAngle = -rodAngle;
             }
             else
             {
-                rodNearEndVec = new Vector3d(0,
-                    data["chordNearEndLength"] + rodHorizontalLocation,
-                    rodVerticalLocation);
-                rodFarEndVec = new Vector3d(0,
-                    data["trussLength"] - (data["chordFarEndLength"] + rodHorizontalLocation),
-                    rodVerticalLocation);
+                rodVec = new Vector3d(0, rodHorizontalLocation, rodVerticalLocation);
                 rotateAxis = Vector3d.XAxis;
-                rotateAngle = data["rodEndAngle"];
+                rotateAngle = rodAngle;
             }
 
-            Solid3d rodNear = CreateTrussRod(data["rodDiameter"], data["rodEndLength"],
-                rodNearEndVec, rotateAngle, rotateAxis);
-            Solid3d rodFar = CreateTrussRod(data["rodDiameter"], data["rodEndLength"],
-                rodFarEndVec, -rotateAngle, rotateAxis);
+            Solid3d rod = CreateTrussRod(rodDiameter, rodLength,
+                rodVec, rotateAngle, rotateAxis);
 
-            // Add end rods to block
-            btr.AppendEntity(rodNear);
-            btr.AppendEntity(rodFar);
-
-            // Calculate and record limits of end rods
-            data.Add("rodEndNearMaxPtD", rodIntersectPoint(rodNear, data["rodDiameter"],
-                rotateAngle, orient, "near").Item1);
-            data.Add("rodEndNearMaxPtH", rodIntersectPoint(rodNear, data["rodDiameter"],
-                rotateAngle, orient, "near").Item2);
-            data.Add("rodEndFarMinPtD", rodIntersectPoint(rodFar, data["rodDiameter"],
-                rotateAngle, orient, "far").Item1);
-            data.Add("rodEndFarMinPtH", rodIntersectPoint(rodFar, data["rodDiameter"],
-                rotateAngle, orient, "far").Item2);
-        }
-
-        public static void CreateTruss(Database acCurDb,
-            Dictionary<string, double> data,
-            string orient = "X Axis")
-        {
-            // Some error checking
-            if (!data.ContainsKey("trussLength"))
-            { Application.ShowAlertDialog("Error: Truss Length not found."); return; } 
-            else if (!data.ContainsKey("trussHeight"))
-            { Application.ShowAlertDialog("Error: Truss Height not found."); return; }
-            else if (!data.ContainsKey("chordWidth"))
-            { Application.ShowAlertDialog("Error: Chord width not found."); return; }
-
-            // Truss block name
-            string tName = "Truss - " + data["trussLength"] + "x" + data["trussHeight"];
-                
-            
-
-                        
-
-                        
-
-                        // Create bottom chords
-                        Solid3d cBottom1 = TrussBottomChord(data, orientation: orient);
-                        Solid3d cBottom2 = TrussBottomChord(data, orientation: orient, mirror: true);
-
-                        // Add top chords to block
-                        acBlkTblRec.AppendEntity(cBottom1);
-                        acBlkTblRec.AppendEntity(cBottom2);
-
-                        // Create and add truss end rods
-                        TrussEndRods(acBlkTblRec, data, orient);
-
-                        // Create and add truss end rods
-                        TrussMidRods(acBlkTblRec, data, orient);
-
-                        /// Add Block to Block Table and close Transaction
-                        acBlkTbl.UpgradeOpen();
-                        acBlkTbl.Add(acBlkTblRec);
-                        acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
-
-                    }
-
-                }
-
-                // Save the new object to the database
-                acTrans.Commit();
-
-            }
-
+            return rod;
         }
 
         [CommandMethod("TrussPrompt")]
@@ -929,8 +897,13 @@ namespace ASI_DOTNET
                 }
 
             }
-            
-            CreateTruss(acCurDb, trussData, orient: orientation);
+
+            // Create Truss block
+            Truss mezzTruss = new Truss(db: acCurDb,
+                data: trussData,
+                orient: orientation);
+
+            mezzTruss.Build();
         }
 
     }
