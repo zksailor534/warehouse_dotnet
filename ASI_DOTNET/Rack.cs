@@ -54,9 +54,6 @@ namespace ASI_DOTNET
                 BlockTable acBlkTbl;
                 acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
 
-                // Blank objectid reference
-                ObjectId fId = ObjectId.Null;
-
                 if (acBlkTbl.Has(name))
                 {
                     // Retrieve object id
@@ -94,6 +91,9 @@ namespace ASI_DOTNET
 
                     }
 
+                    // Set block id property
+                    this.id = acBlkTbl[name];
+
                 }
 
                 // Save the new object to the database
@@ -120,6 +120,9 @@ namespace ASI_DOTNET
 
             // Position the post
             Post.TransformBy(Matrix3d.Displacement(pVec));
+
+            // Set block object properties
+            Utils.SetBlockObjectProperties(Post);
 
             return Post;
         }
@@ -180,6 +183,9 @@ namespace ASI_DOTNET
                 // Position the brace
                 brace.TransformBy(Matrix3d.Displacement(bVec));
 
+                // Set block object properties
+                Utils.SetBlockObjectProperties(brace);
+
                 btr.AppendEntity(brace);
             }
         }
@@ -226,6 +232,9 @@ namespace ASI_DOTNET
 
                 // Position the brace
                 aBrace.TransformBy(Matrix3d.Displacement(aVec));
+
+                // Set block object properties
+                Utils.SetBlockObjectProperties(aBrace);
 
                 // Add brace to block
                 btr.AppendEntity(aBrace);
@@ -327,9 +336,6 @@ namespace ASI_DOTNET
                 BlockTable acBlkTbl;
                 acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
 
-                // Blank objectid reference
-                ObjectId fId = ObjectId.Null;
-
                 if (acBlkTbl.Has(name))
                 {
                     // Retrieve object id
@@ -357,11 +363,11 @@ namespace ASI_DOTNET
                         // Create beam
                         Solid3d beamSolid = Utils.SweepPolylineOverLine(beamPoly, beamLine);
 
-                        // Add entity to Block Table Record
-                        acBlkTblRec.AppendEntity(beamSolid);
-
                         // Set block properties
                         Utils.SetBlockObjectProperties(beamSolid);
+
+                        // Add entity to Block Table Record
+                        acBlkTblRec.AppendEntity(beamSolid);
 
                         /// Add Block to Block Table and Transaction
                         acBlkTbl.UpgradeOpen();

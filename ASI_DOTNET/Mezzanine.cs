@@ -19,45 +19,64 @@ namespace ASI_DOTNET
 {
     class Column
     {
-        public static void CreateColumn(Database acCurDb,
-            double cHeight,
-            double cDiameter,
-            double bDiameter)
+        // Auto-impl class properties
+        private Database db;
+        public double height { get; private set; }
+        public double width { get; private set; }
+        public double baseHeight { get; private set; }
+        public double baseWidth { get; private set; }
+        public string name { get; private set; }
+        public string style { get; private set; }
+        public string layerName { get; private set; }
+        public ObjectId id { get; private set; }
+
+        // Public constructor
+        public Column(Database db,
+            double height,
+            double width,
+            double baseWidth,
+            double baseHeight = 0.75)
         {
-            // Column block name
-            string cName = "Column - " + cHeight + " - " + cDiameter + "x" + cDiameter;
+            this.db = db;
+            this.height = height;
+            this.width = width;
+            this.baseHeight = baseHeight;
+            this.baseWidth = baseWidth;
+            this.name = "Column - " + height + "in - " + width + "x" + baseWidth;
 
-            // Baseplate default height (could be argument)
-            double bHeight = 0.75;
+            // Create beam layer (if necessary)
+            this.layerName = "2D-Mezz-Column";
+            Color layerColor = Utils.ChooseColor("black");
+            Utils.CreateLayer(db, layerName, layerColor);
+        }
 
-            using (Transaction acTrans = acCurDb.TransactionManager.StartTransaction())
+        public void Build()
+        {
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
             {
-                // Open the Block table record for read
+                // Open the Block table for read
                 BlockTable acBlkTbl;
-                acBlkTbl = acTrans.GetObject(acCurDb.BlockTableId,
-                                             OpenMode.ForRead) as BlockTable;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
 
-                // Blank objectid reference
-                ObjectId fId = ObjectId.Null;
-
-                if (acBlkTbl.Has(cName))
+                if (acBlkTbl.Has(name))
                 {
                     // Retrieve object id
-                    fId = acBlkTbl[cName];
+                    this.id = acBlkTbl[name];
                 }
                 else
                 {
+                    // Create new block (record)
                     using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
                     {
-                        acBlkTblRec.Name = cName;
+                        acBlkTblRec.Name = name;
 
                         // Set the insertion point for the block
                         acBlkTblRec.Origin = new Point3d(0, 0, 0);
                         
                         // Calculate baseplate locations
-                        Point3d bMid = new Point3d(bDiameter / 2, bDiameter / 2, bHeight / 2);
+                        Point3d bMid = new Point3d(baseWidth / 2, baseWidth / 2, baseHeight / 2);
                         Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
-                        var cBottom = cHeight / 2 + bHeight;
+                        var cBottom = height / 2 + baseHeight;
                         Vector3d cVec;
                         Point3d cMid;
 
@@ -72,7 +91,7 @@ namespace ASI_DOTNET
                         //}
                         //else
                         //{
-                            cMid = new Point3d(bDiameter / 2, bDiameter / 2, cBottom);
+                        cMid = new Point3d(baseWidth / 2, baseWidth / 2, cBottom);
                         //}
 
                         cVec = Point3d.Origin.GetVectorTo(cMid);
@@ -80,10 +99,13 @@ namespace ASI_DOTNET
                         // Create the 3D solid baseplate
                         Solid3d bPlate = new Solid3d();
                         bPlate.SetDatabaseDefaults();
-                        bPlate.CreateBox(bDiameter, bDiameter, bHeight);
+                        bPlate.CreateBox(baseWidth, baseWidth, baseHeight);
 
                         // Position the baseplate 
                         bPlate.TransformBy(Matrix3d.Displacement(bVec));
+
+                        // Set block object properties
+                        Utils.SetBlockObjectProperties(bPlate);
 
                         // Add baseplate to block
                         acBlkTblRec.AppendEntity(bPlate);
@@ -91,10 +113,13 @@ namespace ASI_DOTNET
                         // Create the 3D solid column
                         Solid3d column = new Solid3d();
                         column.SetDatabaseDefaults();
-                        column.CreateBox(cDiameter, cDiameter, cHeight - bHeight);
+                        column.CreateBox(width, width, height - baseHeight);
 
                         // Position the column 
                         column.TransformBy(Matrix3d.Displacement(cVec));
+
+                        // Set block object properties
+                        Utils.SetBlockObjectProperties(column);
 
                         // Add column to block
                         acBlkTblRec.AppendEntity(column);
@@ -104,6 +129,9 @@ namespace ASI_DOTNET
                         acBlkTbl.Add(acBlkTblRec);
                         acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
                     }
+
+                    // Set block id property
+                    this.id = acBlkTbl[name];
 
                 }
 
@@ -121,7 +149,7 @@ namespace ASI_DOTNET
             // Frame default characteristics
             double cHeight = 96;
             double cDiameter = 6;
-            double bDiameter = 16;
+            double bDiameter = 14;
 
             // Get the current document and database, and start a transaction
             // !!! Move this outside function
@@ -132,6 +160,7 @@ namespace ASI_DOTNET
             PromptDoubleResult cHeightRes;
             PromptDistanceOptions cHeightOpts = new PromptDistanceOptions("");
             cHeightOpts.Message = "\nEnter the total column height: ";
+            cHeightOpts.DefaultValue = 96;
             cHeightRes = acDoc.Editor.GetDistance(cHeightOpts);
             cHeight = cHeightRes.Value;
 
@@ -142,6 +171,7 @@ namespace ASI_DOTNET
             PromptDoubleResult cDiameterRes;
             PromptDistanceOptions cDiameterOpts = new PromptDistanceOptions("");
             cDiameterOpts.Message = "\nEnter the column diameter: ";
+            cDiameterOpts.DefaultValue = 6;
             cDiameterRes = acDoc.Editor.GetDistance(cDiameterOpts);
             cDiameter = cDiameterRes.Value;
 
@@ -152,6 +182,7 @@ namespace ASI_DOTNET
             PromptDoubleResult bDiameterRes;
             PromptDistanceOptions bDiameterOpts = new PromptDistanceOptions("");
             bDiameterOpts.Message = "\nEnter the baseplate diameter: ";
+            bDiameterOpts.DefaultValue = 14;
             bDiameterRes = acDoc.Editor.GetDistance(bDiameterOpts);
             bDiameter = bDiameterRes.Value;
 
@@ -182,7 +213,13 @@ namespace ASI_DOTNET
             //// Exit if the user presses ESC or cancels the command
             //if (cPlaceRes.Status == PromptStatus.Cancel) return;
 
-            CreateColumn(acCurDb, cHeight, cDiameter, bDiameter);
+            // Create Column block
+            Column mezzColumn = new Column(db: acCurDb,
+                height: cHeight,
+                width: cDiameter,
+                baseWidth: bDiameter);
+
+            mezzColumn.Build();
 
             //// Open the active viewport
             //ViewportTableRecord acVportTblRec;
@@ -260,9 +297,6 @@ namespace ASI_DOTNET
                 BlockTable acBlkTbl;
                 acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
 
-                // Blank objectid reference
-                ObjectId fId = ObjectId.Null;
-
                 if (acBlkTbl.Has(name))
                 {
                     // Retrieve object id
@@ -337,6 +371,9 @@ namespace ASI_DOTNET
 
                     }
 
+                    // Set block id property
+                    this.id = acBlkTbl[name];
+
                 }
 
                 // Save the new object to the database
@@ -375,6 +412,9 @@ namespace ASI_DOTNET
             {
                 chord.TransformBy(Matrix3d.Mirroring(new Plane(Point3d.Origin, rotateAxis)));
             }
+
+            // Set block object properties
+            Utils.SetBlockObjectProperties(chord);
 
             return chord;
         }
@@ -552,6 +592,9 @@ namespace ASI_DOTNET
                     Ex.StackTrace);
             }
 
+            // Set block object properties
+            Utils.SetBlockObjectProperties(rod);
+
             return rod;
         }
 
@@ -726,11 +769,6 @@ namespace ASI_DOTNET
                 * Math.Tan(Math.Abs(rodAngle)) - rodDiameter / Math.Cos(Math.Abs(rodAngle))) / 2;
             double rodVerticalLocation = chordWidth - (trussHeight - chordWidth) / 2;
             double rodHorizontalLocation = rodStartLocation + rodHorizontalOffset;
-
-            Application.ShowAlertDialog("rodHorizontalLocation: " + rodHorizontalLocation + "\n" +
-                "rodHorizontalOffset: " + rodHorizontalOffset + "\n" +
-                "rodStartLocation: " + rodStartLocation + "\n" +
-                "rodAngle: " + rodAngle);
 
             if (orient == "X-Axis")
             {
