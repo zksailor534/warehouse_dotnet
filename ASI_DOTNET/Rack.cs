@@ -19,135 +19,73 @@ namespace ASI_DOTNET
 {
     class Frame
     {
-        public static void CreateFrame(Database acCurDb,
-            double fHeight,
-            double fWidth,
-            double fDiameter)
-        {
-            // Frame block name
-            string fName = "Rack Frame - " + fHeight + "x" + fWidth;
+        // Auto-impl class properties
+        private Database db;
+        public double height { get; private set; }
+        public double width { get; private set; }
+        public double diameter { get; private set; }
+        public string name { get; private set; }
+        public string layerName { get; private set; }
+        public ObjectId id { get; private set; }
 
-            using (Transaction acTrans = acCurDb.TransactionManager.StartTransaction())
+        // Public constructor
+        public Frame (Database db,
+            double height,
+            double width,
+            double diameter)
+        {
+            this.db = db;
+            this.height = height;
+            this.width = width;
+            this.diameter = diameter;
+            this.name = "Rack Frame - " + height + "x" + width;
+
+            // Create beam layer (if necessary)
+            this.layerName = "2D-Rack-Frame";
+            Color layerColor = Utils.ChooseColor("teal");
+            Utils.CreateLayer(db, layerName, layerColor);
+        }
+        
+        public void Build()
+        {
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
             {
                 // Open the Block table for read
                 BlockTable acBlkTbl;
-                acBlkTbl = acTrans.GetObject(acCurDb.BlockTableId, OpenMode.ForRead) as BlockTable;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
 
                 // Blank objectid reference
                 ObjectId fId = ObjectId.Null;
 
-                if (acBlkTbl.Has(fName))
+                if (acBlkTbl.Has(name))
                 {
                     // Retrieve object id
-                    fId = acBlkTbl[fName];
+                    this.id = acBlkTbl[name];
                 }
                 else
                 {
                     using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
                     {
-                        acBlkTblRec.Name = fName;
+                        acBlkTblRec.Name = name;
 
                         // Set the insertion point for the block
                         acBlkTblRec.Origin = new Point3d(0, 0, 0);
 
                         // Add frame posts to the block table record
-                        for ( double dist = fDiameter; dist <= fWidth; dist += fWidth - fDiameter) {
-
-                            Solid3d Post = new Solid3d();
-                            Post.SetDatabaseDefaults();
-
-                            // Create the 3D solid frame post
-                            Post.CreateBox(fDiameter, fDiameter, fHeight);
-
-                            // Find location for post
-                            Point3d pMid = new Point3d(fDiameter / 2, dist - fDiameter / 2, fHeight / 2);
-                            Vector3d pVec = Point3d.Origin.GetVectorTo(pMid);
-
-                            // Position the post
-                            Post.TransformBy(Matrix3d.Displacement(pVec));
-
+                        for (double dist = diameter; dist <= width; dist += width - diameter)
+                        {
+                            Solid3d Post = framePost(height, diameter, dist);
                             acBlkTblRec.AppendEntity(Post);
-
                         }
 
                         // Calculate cross-bracing
-                        int bNum;
-                        double bSpace = 0;
-                        double bAngle, bLeftOver;
-                        double bSize = 1;
-                        for (bNum = Convert.ToInt32(fHeight / 12); bNum >= 1; bNum--)
-                        {
-                            bSpace = Math.Floor((fHeight - (bNum + 1) * bSize) / bNum);
-                            bAngle = Math.Atan2(bSpace - bSize, fWidth - (2 * fDiameter));
-                            if ((bAngle < Math.PI / 3) && (bSpace >= fWidth))
-                            {
-                                break;
-                            }
-                        }
-                        bLeftOver = fHeight - (bNum + 1) * bSize - bNum * bSpace;
+                        Dictionary<string, double> braceData = calcBraces(height, diameter);
 
-                        /// Add horizontal cross-braces to the block
-                        for (int i = 1; i <= bNum + 1; i++)
-                        {
-                            Solid3d hBrace = new Solid3d();
-                            hBrace.SetDatabaseDefaults();
+                        // Add horizontal cross-braces
+                        horizontalBraces(acBlkTblRec, height, diameter, braceData);
 
-                            // Create the 3D solid horizontal cross brace
-                            hBrace.CreateBox(bSize, fWidth - 2 * fDiameter, bSize);
-
-                            // Find location for brace
-                            Point3d bMid = new Point3d(fDiameter / 2, fWidth / 2,
-                                bLeftOver / 2 + ((bSpace + bSize) * (i - 1)) + bSize / 2);
-                            Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
-
-                            // Position the brace
-                            hBrace.TransformBy(Matrix3d.Displacement(bVec));
-
-                            acBlkTblRec.AppendEntity(hBrace);
-                        }
-
-                        /// Add angled cross-braces to the block
-                        /// Create polyline of brace profile and rotate to correct orienation
-                        Polyline bPoly = new Polyline();
-                        bPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
-                        bPoly.AddVertexAt(1, new Point2d(bSize, 0), 0, 0, 0);
-                        bPoly.AddVertexAt(2, new Point2d(bSize, bSize), 0, 0, 0);
-                        bPoly.AddVertexAt(3, new Point2d(0, bSize), 0, 0, 0);
-                        bPoly.Closed = true;
-                        bPoly.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
-
-                        /// Create sweep path
-                        Line bPath = new Line(Point3d.Origin, new Point3d(0, fWidth - 2 * fDiameter, bSpace - bSize));
-
-                        /// Create swept cross braces
-                        for (int i = 1; i <= bNum; i++)
-                        {
-                            // Create swept brace at origin
-                            Solid3d aBrace = Utils.SweepPolylineOverLine(bPoly, bPath);
-
-                            // Calculate location
-                            double aBxLoc = (fDiameter / 2) - (bSize / 2);
-                            double aByLoc = fDiameter;
-                            double aBzLoc = bLeftOver / 2 + bSize * i + bSpace * (i - 1);
-
-                            /// Even braces get rotated 180 deg and different x and y coordinates
-                            if (i % 2 == 0)
-                            {
-                                aBrace.TransformBy(Matrix3d.Rotation(Math.PI, Vector3d.ZAxis, Point3d.Origin));
-                                aBxLoc = (fDiameter / 2) + (bSize / 2);
-                                aByLoc = fWidth - fDiameter;
-                            }
-
-                            // Create location for brace
-                            Point3d aMid = new Point3d(aBxLoc, aByLoc, aBzLoc);
-                            Vector3d aVec = Point3d.Origin.GetVectorTo(aMid);
-
-                            // Position the brace
-                            aBrace.TransformBy(Matrix3d.Displacement(aVec));
-
-                            // Add brace to block
-                            acBlkTblRec.AppendEntity(aBrace);
-                        }
+                        // Add angled cross-braces to the block
+                        angleBraces(acBlkTblRec, height, diameter, braceData);
 
                         /// Add Block to Block Table and close Transaction
                         acBlkTbl.UpgradeOpen();
@@ -163,6 +101,135 @@ namespace ASI_DOTNET
 
             }
 
+        }
+
+        // Build frame post
+        private Solid3d framePost (double height,
+            double diameter,
+            double distance)
+        {
+            Solid3d Post = new Solid3d();
+            Post.SetDatabaseDefaults();
+
+            // Create the 3D solid frame post
+            Post.CreateBox(diameter, diameter, height);
+
+            // Find location for post
+            Point3d pMid = new Point3d(diameter / 2, distance - diameter / 2, height / 2);
+            Vector3d pVec = Point3d.Origin.GetVectorTo(pMid);
+
+            // Position the post
+            Post.TransformBy(Matrix3d.Displacement(pVec));
+
+            return Post;
+        }
+
+        private Dictionary<string, double> calcBraces(double height,
+            double diameter)
+        {
+            // Initialize dictionary
+            Dictionary<string, double> data = new Dictionary<string, double>();
+
+            // Calculate cross-bracing
+            double bNum;
+            double bSpace = 0;
+            double bAngle = Math.PI;
+            double bSize = 1;
+            double bEndSpace = 8;
+
+            for (bNum = 1; bNum <= Math.Floor((height - bEndSpace) / 12); bNum++)
+            {
+                bSpace = Math.Floor(((height - bEndSpace) - (bNum + 1) * bSize) / bNum);
+                bAngle = Math.Atan2(bSpace - bSize, width - (2 * diameter));
+                if ((bAngle < Math.PI / 3))
+                {
+                    break;
+                }
+            }
+
+            data.Add("num", bNum);
+            data.Add("size", bSize);
+            data.Add("space", bSpace);
+            data.Add("angle", bAngle);
+            data.Add("leftover", height - ((bNum + 1) * bSize) - (bNum * bSpace));
+
+            return data;
+        }
+
+        // Build frame post
+        private void horizontalBraces(BlockTableRecord btr,
+            double height,
+            double diameter,
+            Dictionary<string, double> data)
+        {
+
+            /// Add horizontal cross-braces to the block
+            for (int i = 1; i <= Convert.ToInt32(data["num"]) + 1; i++)
+            {
+                Solid3d brace = new Solid3d();
+                brace.SetDatabaseDefaults();
+
+                // Create the 3D solid horizontal cross brace
+                brace.CreateBox(data["size"], width - 2 * diameter, data["size"]);
+
+                // Find location for brace
+                Point3d bMid = new Point3d(diameter / 2, width / 2,
+                    data["leftover"] / 2 + ((data["space"] + data["size"]) * (i - 1)) + data["size"] / 2);
+                Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
+
+                // Position the brace
+                brace.TransformBy(Matrix3d.Displacement(bVec));
+
+                btr.AppendEntity(brace);
+            }
+        }
+
+        private void angleBraces(BlockTableRecord btr,
+            double height,
+            double diameter,
+            Dictionary<string, double> data)
+        {
+            // Create polyline of brace profile and rotate to correct orienation
+            Polyline bPoly = new Polyline();
+            bPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
+            bPoly.AddVertexAt(1, new Point2d(data["size"], 0), 0, 0, 0);
+            bPoly.AddVertexAt(2, new Point2d(data["size"], data["size"]), 0, 0, 0);
+            bPoly.AddVertexAt(3, new Point2d(0, data["size"]), 0, 0, 0);
+            bPoly.Closed = true;
+            bPoly.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+
+            /// Create sweep path
+            Line bPath = new Line(Point3d.Origin, new Point3d(0, width - 2 * diameter, data["space"] - data["size"]));
+
+            /// Create swept cross braces
+            for (int i = 1; i <= Convert.ToInt32(data["num"]); i++)
+            {
+                // Create swept brace at origin
+                Solid3d aBrace = Utils.SweepPolylineOverLine(bPoly, bPath);
+
+                // Calculate location
+                double aBxLoc = (diameter / 2) - (data["size"] / 2);
+                double aByLoc = diameter;
+                double aBzLoc = data["leftover"] / 2 + data["size"] * i + data["space"] * (i - 1);
+
+                /// Even braces get rotated 180 deg and different x and y coordinates
+                if (i % 2 == 0)
+                {
+                    aBrace.TransformBy(Matrix3d.Rotation(Math.PI, Vector3d.ZAxis, Point3d.Origin));
+                    aBxLoc = (diameter / 2) + (data["size"] / 2);
+                    aByLoc = width - diameter;
+                }
+
+                // Create location for brace
+                Point3d aMid = new Point3d(aBxLoc, aByLoc, aBzLoc);
+                Vector3d aVec = Point3d.Origin.GetVectorTo(aMid);
+
+                // Position the brace
+                aBrace.TransformBy(Matrix3d.Displacement(aVec));
+
+                // Add brace to block
+                btr.AppendEntity(aBrace);
+            }
         }
 
         [CommandMethod("FramePrompt")]
@@ -207,7 +274,12 @@ namespace ASI_DOTNET
             if (diameterRes.Status != PromptStatus.OK) return;
 
             // Create Frame block
-            Frame.CreateFrame(acCurDb, height, width, diameter);
+            Frame rackFrame = new Frame(db: acCurDb,
+                height: height,
+                width: width,
+                diameter: diameter);
+
+            rackFrame.Build();
         }
 
     }
@@ -261,7 +333,7 @@ namespace ASI_DOTNET
                 if (acBlkTbl.Has(name))
                 {
                     // Retrieve object id
-                    fId = acBlkTbl[name];
+                    this.id = acBlkTbl[name];
                 }
                 else
                 {

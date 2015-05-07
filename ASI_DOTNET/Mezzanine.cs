@@ -10,6 +10,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Windows;
+using Autodesk.AutoCAD.Colors;
 
 [assembly: CommandClass(typeof(ASI_DOTNET.Column))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Truss))]
@@ -197,6 +198,115 @@ namespace ASI_DOTNET
 
     class Truss
     {
+        // Auto-impl class properties
+        private Database db;
+        public double trussLength { get; private set; }
+        public double trussHeight { get; private set; }
+        public double chordWidth { get; private set; }
+        public double chordThickness { get; private set; }
+        public double chordNearEndLength { get; private set; }
+        public double chordFarEndLength { get; private set; }
+        public double rodDiameter { get; private set; }
+        public double rodEndAngle { get; private set; }
+        public double rodMidAngle { get; private set; }
+        public string name { get; private set; }
+        public string orientation { get; private set; }
+        public string layerName { get; private set; }
+        public ObjectId id { get; private set; }
+
+        // Public constructor
+        public Truss(Database db,
+            Dictionary<string, double> data,
+            string orient = "X Axis")
+        {
+            this.db = db;
+            this.trussLength = data["trussLength"];
+            this.trussHeight = data["trussHeight"];
+            this.chordWidth = data["chordWidth"];
+            this.chordThickness = data["chordThickness"];
+            this.chordNearEndLength = data["chordNearEndLength"];
+            this.chordFarEndLength = data["chordFarEndLength"];
+            this.rodDiameter = data["rodDiameter"];
+            this.rodEndAngle = data["rodEndAngle"];
+            this.rodMidAngle = data["rodMidAngle"];
+            this.orientation = orient;
+            this.name = "Truss - " + trussLength + "x" + trussHeight;
+
+            // Create beam layer (if necessary)
+            this.layerName = "2D-Mezz-Truss";
+            Color layerColor = Utils.ChooseColor("black");
+            Utils.CreateLayer(db, layerName, layerColor);
+        }
+
+        public void Build()
+        {
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
+            {
+                // Open the Block table for read
+                BlockTable acBlkTbl;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+
+                // Blank objectid reference
+                ObjectId fId = ObjectId.Null;
+
+                if (acBlkTbl.Has(name))
+                {
+                    // Retrieve object id
+                    this.id = acBlkTbl[name];
+                }
+                else
+                {
+                    using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
+                    {
+                        acBlkTblRec.Name = name;
+
+                        // Set the insertion point for the block
+                        acBlkTblRec.Origin = new Point3d(0, 0, 0);
+
+                        // Create top chords
+                        Solid3d cTop1 = TrussTopChord(trussLength, chordWidth,
+                            chordThickness, rodDiameter, orientation);
+                        Solid3d cTop2 = TrussTopChord(trussLength, chordWidth,
+                            chordThickness, rodDiameter, orientation, mirror: true);
+
+                        // Add top chords to block
+                        acBlkTblRec.AppendEntity(cTop1);
+                        acBlkTblRec.AppendEntity(cTop2);
+
+                        // Create end chords
+                        Solid3d cEndNear1 = TrussEndChord(trussLength, chordNearEndLength,
+                            chordWidth, chordThickness, rodDiameter, "near", orientation);
+                        Solid3d cEndNear2 = TrussEndChord(trussLength, chordNearEndLength,
+                            chordWidth, chordThickness, rodDiameter, "near", orientation, mirror: true);
+                        Solid3d cEndFar1 = TrussEndChord(trussLength, chordFarEndLength,
+                            chordWidth, chordThickness, rodDiameter, "far", orientation);
+                        Solid3d cEndFar2 = TrussEndChord(trussLength, chordFarEndLength,
+                            chordWidth, chordThickness, rodDiameter, "far", orientation, mirror: true);
+
+                        // Add end chords to block
+                        acBlkTblRec.AppendEntity(cEndNear1);
+                        acBlkTblRec.AppendEntity(cEndNear2);
+                        acBlkTblRec.AppendEntity(cEndFar1);
+                        acBlkTblRec.AppendEntity(cEndFar2);
+
+                        // Add angled cross-braces to the block
+                        angleBraces(acBlkTblRec, height, diameter, braceData);
+
+                        /// Add Block to Block Table and close Transaction
+                        acBlkTbl.UpgradeOpen();
+                        acBlkTbl.Add(acBlkTblRec);
+                        acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
+
+                    }
+
+                }
+
+                // Save the new object to the database
+                acTrans.Commit();
+
+            }
+        }
+
         public static Solid3d CreateTrussChord(double x1,
             double x2,
             double y1,
@@ -231,7 +341,10 @@ namespace ASI_DOTNET
             return chord;
         }
 
-        public static Solid3d TrussTopChord(Dictionary<string, double> data,
+        private static Solid3d TrussTopChord(double trussLength,
+            double chordWidth,
+            double chordThickness,
+            double rodDiameter,
             string orientation,
             bool mirror = false)
         {
@@ -250,35 +363,38 @@ namespace ASI_DOTNET
             {
                 rotateAxis = Vector3d.YAxis;
                 rotateAngle = Math.PI / 2;
-                chordVec = new Vector3d(0, data["rodDiameter"] / 2, data["chordWidth"] * 2);
-                cX1 = data["chordWidth"];
-                cX2 = data["chordThickness"];
-                cY1 = data["chordThickness"];
-                cY2 = data["chordWidth"];
+                chordVec = new Vector3d(0, rodDiameter / 2, chordWidth * 2);
+                cX1 = chordWidth;
+                cX2 = chordThickness;
+                cY1 = chordThickness;
+                cY2 = chordWidth;
             }
             else // assume y orientation
             {
                 rotateAxis = Vector3d.XAxis;
                 rotateAngle = - Math.PI / 2;
-                chordVec = new Vector3d(data["rodDiameter"] / 2, 0, data["chordWidth"] * 2);
-                cX1 = data["chordWidth"];
-                cX2 = data["chordThickness"];
-                cY1 = data["chordThickness"];
-                cY2 = data["chordWidth"];
+                chordVec = new Vector3d(rodDiameter / 2, 0, chordWidth * 2);
+                cX1 = chordWidth;
+                cX2 = chordThickness;
+                cY1 = chordThickness;
+                cY2 = chordWidth;
             }
 
-            return CreateTrussChord(cX1, cX2, cY1, cY2, data["trussLength"], rotateAngle, 
+            return CreateTrussChord(cX1, cX2, cY1, cY2, trussLength, rotateAngle, 
                 rotateAxis, chordVec, mirror: mirror);
         }
 
-        public static Solid3d TrussEndChord(Dictionary<string, double> data,
+        private static Solid3d TrussEndChord(double trussLength,
+            double chordLength,
+            double chordWidth,
+            double chordThickness,
+            double rodDiameter,
             string placement = "near",
             string orientation = "Y-Axis",
             bool mirror = false)
         {
 
             // Variable stubs
-            double chordLength;
             double chordLocation;
             Vector3d rotateAxis;
             double rotateAngle;
@@ -291,12 +407,10 @@ namespace ASI_DOTNET
             // Calculate truss values
             if (placement == "far")
             {
-                chordLength = data["chordFarEndLength"];
-                chordLocation = data["trussLength"] - chordLength;
+                chordLocation = trussLength - chordLength;
             }
             else
             {
-                chordLength = data["chordNearEndLength"];
                 chordLocation = 0;
             }
 
@@ -304,21 +418,21 @@ namespace ASI_DOTNET
             {
                 rotateAxis = Vector3d.YAxis;
                 rotateAngle = Math.PI / 2;
-                chordVec = new Vector3d(chordLocation, data["rodDiameter"] / 2, 0);
-                cX1 = -data["chordWidth"];
-                cX2 = -data["chordThickness"];
-                cY1 = data["chordThickness"];
-                cY2 = data["chordWidth"];
+                chordVec = new Vector3d(chordLocation, rodDiameter / 2, 0);
+                cX1 = -chordWidth;
+                cX2 = -chordThickness;
+                cY1 = chordThickness;
+                cY2 = chordWidth;
             }
             else // assume y orientation
             {
                 rotateAxis = Vector3d.XAxis;
                 rotateAngle = -Math.PI / 2;
-                chordVec = new Vector3d(data["rodDiameter"] / 2, chordLocation, 0);
-                cX1 = data["chordWidth"];
-                cX2 = data["chordThickness"];
-                cY1 = -data["chordThickness"];
-                cY2 = -data["chordWidth"];
+                chordVec = new Vector3d(rodDiameter / 2, chordLocation, 0);
+                cX1 = chordWidth;
+                cX2 = chordThickness;
+                cY1 = -chordThickness;
+                cY2 = -chordWidth;
             }
 
             return CreateTrussChord(cX1, cX2, cY1, cY2, chordLength, rotateAngle,
@@ -633,50 +747,11 @@ namespace ASI_DOTNET
             // Truss block name
             string tName = "Truss - " + data["trussLength"] + "x" + data["trussHeight"];
                 
-            using (Transaction acTrans = acCurDb.TransactionManager.StartTransaction())
-            {
-                // Open the Block table record for read
-                BlockTable acBlkTbl;
-                acBlkTbl = acTrans.GetObject(acCurDb.BlockTableId,
-                                             OpenMode.ForRead) as BlockTable;
+            
 
-                // Blank objectid reference
-                ObjectId fId = ObjectId.Null;
+                        
 
-                if (acBlkTbl.Has(tName))
-                {
-                    // Retrieve object id
-                    fId = acBlkTbl[tName];
-                    //!!! Add options here to save or overwrite
-                }
-                else
-                {
-                    using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
-                    {
-                        acBlkTblRec.Name = tName;
-
-                        // Set the insertion point for the block
-                        acBlkTblRec.Origin = Point3d.Origin;
-
-                        // Create top chords
-                        Solid3d cTop1 = TrussTopChord(data, orient);
-                        Solid3d cTop2 = TrussTopChord(data, orient, mirror: true);
-
-                        // Add top chords to block
-                        acBlkTblRec.AppendEntity(cTop1);
-                        acBlkTblRec.AppendEntity(cTop2);
-
-                        // Create end chords
-                        Solid3d cEndNear1 = TrussEndChord(data, "near", orient);
-                        Solid3d cEndNear2 = TrussEndChord(data, "near", orient, mirror: true);
-                        Solid3d cEndFar1 = TrussEndChord(data, "far", orient);
-                        Solid3d cEndFar2 = TrussEndChord(data, "far", orient, mirror: true);
-
-                        // Add top chords to block
-                        acBlkTblRec.AppendEntity(cEndNear1);
-                        acBlkTblRec.AppendEntity(cEndNear2);
-                        acBlkTblRec.AppendEntity(cEndFar1);
-                        acBlkTblRec.AppendEntity(cEndFar2);
+                        
 
                         // Create bottom chords
                         Solid3d cBottom1 = TrussBottomChord(data, orientation: orient);

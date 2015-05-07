@@ -85,6 +85,9 @@ namespace ASI_DOTNET
                 case "orange":
                     id = 30;
                     break;
+                case "teal":
+                    id = 134;
+                    break;
                 case "black":
                     id = 250;
                     break;
