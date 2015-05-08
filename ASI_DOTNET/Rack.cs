@@ -9,7 +9,6 @@ using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.EditorInput;
-using Autodesk.AutoCAD.Windows;
 using Autodesk.AutoCAD.Colors;
 
 [assembly: CommandClass(typeof(ASI_DOTNET.Frame))]
@@ -38,7 +37,7 @@ namespace ASI_DOTNET
             this.height = height;
             this.width = width;
             this.diameter = diameter;
-            this.name = "Rack Frame - " + height + "x" + width;
+            this.name = "Frame - " + height + "x" + width;
 
             // Create beam layer (if necessary)
             this.layerName = "2D-Rack-Frame";
@@ -300,10 +299,13 @@ namespace ASI_DOTNET
         public double length { get; private set; }
         public double height { get; private set; }
         public double width { get; private set; }
+        public double step { get; private set; }
+        public double thickness { get; private set; }
         public string name { get; private set; }
         public string orientation { get; private set; }
         public string style { get; private set; }
         public string layerName { get; private set; }
+        public Color layerColor { get; private set; }
         public ObjectId id { get; private set; }
 
         // Public constructor
@@ -320,11 +322,20 @@ namespace ASI_DOTNET
             this.width = width;
             this.orientation = orient;
             this.style = style;
-            this.name = "Rack Beam - " + length + "x" + height;
+            this.name = "Beam - " + length + "x" + height;
 
             // Create beam layer (if necessary)
-            this.layerName = "2D-Rack-Beam";
-            Color layerColor = Utils.ChooseColor("blue");
+            if (style == "Step" || style == "Box")
+            {
+                this.layerName = "2D-Rack-Beam";
+                this.layerColor = Utils.ChooseColor("blue");
+            }
+            else if (style == "IBeam" || style == "CChannel")
+            {
+                this.layerName = "2D-Mezz-Beam";
+                this.layerColor = Utils.ChooseColor("blue");
+            }
+
             Utils.CreateLayer(db, layerName, layerColor);
         }
 
@@ -389,28 +400,56 @@ namespace ASI_DOTNET
             double width,
             string style = "Step",
             double stepSize = 0.75,
+            double beamThickness = 0.75,
             string orient = "X-Axis")
         {
             int i = 0;
 
             /// Create polyline of brace profile and rotate to correct orienation
             Polyline poly = new Polyline();
-            poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
-            poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
-
-            // Add vertices for beam shape
             if (style == "Step")
             {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
                 poly.AddVertexAt(i++, new Point2d(-height, width - stepSize), 0, 0, 0);
                 poly.AddVertexAt(i++, new Point2d(-height + stepSize, width - stepSize), 0, 0, 0);
                 poly.AddVertexAt(i++, new Point2d(-height + stepSize, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
             }
             else if (style == "Box")
             {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
                 poly.AddVertexAt(i++, new Point2d(-height, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
+            }
+            else if (style == "IBeam")
+            {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, (width - beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, (width - beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, (width + beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, (width + beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
+            }
+            else if (style == "CChannel")
+            {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, beamThickness), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, beamThickness), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
             }
 
-            poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
             poly.Closed = true;
             poly.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.YAxis, Point3d.Origin));
 
@@ -492,6 +531,8 @@ namespace ASI_DOTNET
             bStyleOpts.Message = "\nEnter beam style: ";
             bStyleOpts.Keywords.Add("Step");
             bStyleOpts.Keywords.Add("Box");
+            bStyleOpts.Keywords.Add("IBeam");
+            bStyleOpts.Keywords.Add("CChannel");
             bStyleOpts.Keywords.Default = "Step";
             bStyleOpts.AllowArbitraryInput = false;
 
@@ -543,14 +584,14 @@ namespace ASI_DOTNET
             }
 
             // Create beam
-            Beam rackBeam = new Beam(db: acCurDb,
+            Beam solidBeam = new Beam(db: acCurDb,
                 length: length,
                 height: height,
                 width: width,
                 orient: orientation,
                 style: style);
 
-            rackBeam.Build();
+            solidBeam.Build();
         }
                         
     }

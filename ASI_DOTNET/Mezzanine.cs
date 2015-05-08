@@ -9,7 +9,6 @@ using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.EditorInput;
-using Autodesk.AutoCAD.Windows;
 using Autodesk.AutoCAD.Colors;
 
 [assembly: CommandClass(typeof(ASI_DOTNET.Column))]
