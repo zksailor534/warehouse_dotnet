@@ -102,26 +102,35 @@ namespace ASI_DOTNET
                     Application.ShowAlertDialog("Invalid Color Name: " + name);
                     break;
             }
-
+            
             return Color.FromColorIndex(ColorMethod.ByAci, id);
         }
 
         public static Solid3d SweepPolylineOverLine(Polyline p,
             Line l)
         {
-            /// Create a region from the polyline
-            DBObjectCollection acDBObjColl = new DBObjectCollection();
-            acDBObjColl.Add(p);
-            DBObjectCollection myRegionColl = new DBObjectCollection();
-            myRegionColl = Region.CreateFromCurves(acDBObjColl);
-            Region region = myRegionColl[0] as Region;
-
-            /// Create 3D solid and sweep existing region along path
             Solid3d solSweep = new Solid3d();
-            SweepOptionsBuilder sob =
-                new SweepOptionsBuilder();
-            solSweep.CreateSweptSolid(region, l, sob.ToSweepOptions());
+            try
+            {
+                // Create a region from the polyline
+                DBObjectCollection acDBObjColl = new DBObjectCollection();
+                acDBObjColl.Add(p);
+                DBObjectCollection myRegionColl = new DBObjectCollection();
+                myRegionColl = Region.CreateFromCurves(acDBObjColl);
+                Region region = myRegionColl[0] as Region;
 
+                // Create 3D solid and sweep existing region along path
+                SweepOptionsBuilder sob =
+                    new SweepOptionsBuilder();
+                solSweep.CreateSweptSolid(region, l, sob.ToSweepOptions());
+            }
+            catch (Autodesk.AutoCAD.Runtime.Exception Ex)
+            {
+                Application.ShowAlertDialog("Unable to sweep the following polyline:\n" +
+                    "polyline: " + p.ToString() + "\n" +
+                    "line: " + l.ToString() + "\n" +
+                    Ex.Message);
+            }
             return solSweep;
         }
 
@@ -129,17 +138,26 @@ namespace ASI_DOTNET
             double height,
             double taperAngle = 0)
         {
-            /// Create a region from the polyline
-            DBObjectCollection acDBObjColl = new DBObjectCollection();
-            acDBObjColl.Add(p);
-            DBObjectCollection myRegionColl = new DBObjectCollection();
-            myRegionColl = Region.CreateFromCurves(acDBObjColl);
-            Region region = myRegionColl[0] as Region;
-
-            /// Create 3D solid and sweep existing region along path
             Solid3d solExt = new Solid3d();
-            solExt.Extrude(region, height, taperAngle);
+            try
+            {
+                // Create a region from the polyline
+                DBObjectCollection acDBObjColl = new DBObjectCollection();
+                acDBObjColl.Add(p);
+                DBObjectCollection myRegionColl = new DBObjectCollection();
+                myRegionColl = Region.CreateFromCurves(acDBObjColl);
+                Region region = myRegionColl[0] as Region;
 
+                // Create 3D solid and sweep existing region along path
+                solExt.Extrude(region, height, taperAngle);
+            }
+            catch (Autodesk.AutoCAD.Runtime.Exception Ex)
+            {
+                Application.ShowAlertDialog("Unable to extrude the following polyline:\n" +
+                    "polyline: " + p.ToString() + "\n" +
+                    "height: " + height.ToString() + "\n" +
+                    Ex.Message);
+            }
             return solExt;
         }
 
@@ -147,17 +165,26 @@ namespace ASI_DOTNET
             double height,
             double taperAngle = 0)
         {
-            /// Create a region from the polyline
-            DBObjectCollection acDBObjColl = new DBObjectCollection();
-            acDBObjColl.Add(c);
-            DBObjectCollection myRegionColl = new DBObjectCollection();
-            myRegionColl = Region.CreateFromCurves(acDBObjColl);
-            Region region = myRegionColl[0] as Region;
-
-            /// Create 3D solid and sweep existing region along path
             Solid3d solExt = new Solid3d();
-            solExt.Extrude(region, height, taperAngle);
+            try
+            {
+                // Create a region from the polyline
+                DBObjectCollection acDBObjColl = new DBObjectCollection();
+                acDBObjColl.Add(c);
+                DBObjectCollection myRegionColl = new DBObjectCollection();
+                myRegionColl = Region.CreateFromCurves(acDBObjColl);
+                Region region = myRegionColl[0] as Region;
 
+                // Create 3D solid and sweep existing region along path
+                solExt.Extrude(region, height, taperAngle);
+            }
+            catch (Autodesk.AutoCAD.Runtime.Exception Ex)
+            {
+                Application.ShowAlertDialog("Unable to extrude the following circle:\n" +
+                    "circle: " + c.ToString() + "\n" +
+                    "height: " + height.ToString() + "\n" +
+                    Ex.Message);
+            }
             return solExt;
         }
 

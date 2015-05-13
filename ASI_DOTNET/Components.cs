@@ -13,6 +13,8 @@ using Autodesk.AutoCAD.Colors;
 
 [assembly: CommandClass(typeof(ASI_DOTNET.Column))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Truss))]
+[assembly: CommandClass(typeof(ASI_DOTNET.Frame))]
+[assembly: CommandClass(typeof(ASI_DOTNET.Beam))]
 
 namespace ASI_DOTNET
 {
@@ -26,7 +28,7 @@ namespace ASI_DOTNET
         public double baseWidth { get; private set; }
         public string name { get; private set; }
         public string style { get; private set; }
-        public string layerName { get; private set; }
+        public string layerName { get; set; }
         public ObjectId id { get; private set; }
 
         // Public constructor
@@ -36,16 +38,26 @@ namespace ASI_DOTNET
             double baseWidth,
             double baseHeight = 0.75)
         {
+            Color layerColor;
             this.db = db;
             this.height = height;
             this.width = width;
             this.baseHeight = baseHeight;
             this.baseWidth = baseWidth;
-            this.name = "Column - " + height + "in - " + width + "x" + baseWidth;
+            if (baseHeight > 0)
+            {
+                this.name = "Column - " + height + "in - " + width + "x" + baseWidth;
+                this.layerName = "3D-Mezz-Column";
+                layerColor = Utils.ChooseColor("black");
+            }
+            else
+            {
+                this.name = "Column - " + height + "x" + width;
+                this.layerName = "3D-Rack-Column";
+                layerColor = Utils.ChooseColor("teal");
+            }
 
             // Create beam layer (if necessary)
-            this.layerName = "2D-Mezz-Column";
-            Color layerColor = Utils.ChooseColor("black");
             Utils.CreateLayer(db, layerName, layerColor);
         }
 
@@ -72,43 +84,29 @@ namespace ASI_DOTNET
                         // Set the insertion point for the block
                         acBlkTblRec.Origin = new Point3d(0, 0, 0);
                         
-                        // Calculate baseplate locations
-                        Point3d bMid = new Point3d(baseWidth / 2, baseWidth / 2, baseHeight / 2);
+                        // Calculate locations
+                        Point3d cMid = new Point3d(width / 2, width / 2, height / 2);
+                        Vector3d cVec = Point3d.Origin.GetVectorTo(cMid);
+                        Point3d bMid = new Point3d(width / 2, width / 2, baseHeight / 2);
                         Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
-                        var cBottom = height / 2 + baseHeight;
-                        Vector3d cVec;
-                        Point3d cMid;
 
-                        //// Calculate column location relative to baseplate
-                        //if (cPlaceRes.StringResult == "Corner")
-                        //{
-                        //    cMid = new Point3d(cWidth / 2, cWidth / 2, cBottom);
-                        //}
-                        //else if (cPlaceRes.StringResult == "Side")
-                        //{
-                        //    cMid = new Point3d(bWidth / 2, cWidth / 2, cBottom);
-                        //}
-                        //else
-                        //{
-                        cMid = new Point3d(baseWidth / 2, baseWidth / 2, cBottom);
-                        //}
+                        if (baseHeight > 0)
+                        {
+                            // Create the 3D solid baseplate
+                            Solid3d bPlate = new Solid3d();
+                            bPlate.SetDatabaseDefaults();
+                            bPlate.CreateBox(baseWidth, baseWidth, baseHeight);
 
-                        cVec = Point3d.Origin.GetVectorTo(cMid);
-                
-                        // Create the 3D solid baseplate
-                        Solid3d bPlate = new Solid3d();
-                        bPlate.SetDatabaseDefaults();
-                        bPlate.CreateBox(baseWidth, baseWidth, baseHeight);
+                            // Position the baseplate 
+                            bPlate.TransformBy(Matrix3d.Displacement(bVec));
 
-                        // Position the baseplate 
-                        bPlate.TransformBy(Matrix3d.Displacement(bVec));
+                            // Set block object properties
+                            Utils.SetBlockObjectProperties(bPlate);
 
-                        // Set block object properties
-                        Utils.SetBlockObjectProperties(bPlate);
-
-                        // Add baseplate to block
-                        acBlkTblRec.AppendEntity(bPlate);
-
+                            // Add baseplate to block
+                            acBlkTblRec.AppendEntity(bPlate);
+                        }
+                        
                         // Create the 3D solid column
                         Solid3d column = new Solid3d();
                         column.SetDatabaseDefaults();
@@ -141,93 +139,122 @@ namespace ASI_DOTNET
 
         }
 
-
         [CommandMethod("ColumnPrompt")]
         public static void ColumnPrompt()
         {
-            // Frame default characteristics
-            double cHeight = 96;
-            double cDiameter = 6;
-            double bDiameter = 14;
+            // Declare variables with defaults
+            double bHeight = 0.75;
 
             // Get the current document and database, and start a transaction
-            // !!! Move this outside function
             Document acDoc = Application.DocumentManager.MdiActiveDocument;
             Database acCurDb = acDoc.Database;
 
-            // Prompt for the column height
+            // Prepare prompt for the column height
             PromptDoubleResult cHeightRes;
             PromptDistanceOptions cHeightOpts = new PromptDistanceOptions("");
-            cHeightOpts.Message = "\nEnter the total column height: ";
+            cHeightOpts.Message = "\nEnter the column height: ";
             cHeightOpts.DefaultValue = 96;
+            cHeightOpts.AllowZero = false;
+            cHeightOpts.AllowNegative = false;
+
+            // Prepare prompt for the column width
+            PromptDoubleResult cWidthRes;
+            PromptDistanceOptions cWidthOpts = new PromptDistanceOptions("");
+            cWidthOpts.Message = "\nEnter the column diameter: ";
+            cWidthOpts.DefaultValue = 6;
+            cWidthOpts.AllowZero = false;
+            cWidthOpts.AllowNegative = false;
+
+            // Prepare prompt for the baseplate diameter
+            PromptDoubleResult bWidthRes;
+            PromptDistanceOptions bWidthOpts = new PromptDistanceOptions("");
+            bWidthOpts.Message = "\nEnter the baseplate diameter: ";
+            bWidthOpts.DefaultValue = 14;
+            bWidthOpts.AllowZero = false;
+            bWidthOpts.AllowNegative = false;
+
+            // Prepare prompt for other options
+            PromptResult cOthersRes;
+            PromptKeywordOptions cOthersOpts = new PromptKeywordOptions("");
+            cOthersOpts.Message = "\nOptions: ";
+            cOthersOpts.Keywords.Add("BaseplateHeight");
+            cOthersOpts.Keywords.Add("Style");
+            cOthersOpts.AllowArbitraryInput = false;
+            cOthersOpts.AllowNone = true;
+
+            // Prepare prompt for the baseplate height
+            PromptDoubleResult bHeightRes;
+            PromptDistanceOptions bHeightOpts = new PromptDistanceOptions("");
+            bHeightOpts.Message = "\nEnter the baseplate height: ";
+            bHeightOpts.DefaultValue = 0.75;
+            bHeightOpts.AllowNegative = false;
+
+            // Prepare prompt for the column orientation style
+            string style = "Center";
+            PromptResult cStyleRes;
+            PromptKeywordOptions cStyleOpts = new PromptKeywordOptions("");
+            cStyleOpts.Message = "\nEnter style: ";
+            cStyleOpts.Keywords.Add("Center");
+            cStyleOpts.Keywords.Add("Corner");
+            cStyleOpts.Keywords.Add("Side");
+            cStyleOpts.Keywords.Default = "Center";
+            cStyleOpts.AllowArbitraryInput = false;
+
+            // Prompt for column height
             cHeightRes = acDoc.Editor.GetDistance(cHeightOpts);
-            cHeight = cHeightRes.Value;
+            if (cHeightRes.Status != PromptStatus.OK) return;
+            double cHeight = cHeightRes.Value;
+
+            // Prompt for column diameter
+            cWidthRes = acDoc.Editor.GetDistance(cWidthOpts);
+            if (cWidthRes.Status != PromptStatus.OK) return;
+            double cWidth = cWidthRes.Value;
+
+            // Prompt for baseplate diameter
+            bWidthRes = acDoc.Editor.GetDistance(bWidthOpts);
+            if (bWidthRes.Status != PromptStatus.OK) return;
+            double bWidth = bWidthRes.Value;
+
+            // Prompt for other options
+            cOthersRes = acDoc.Editor.GetKeywords(cOthersOpts);
 
             // Exit if the user presses ESC or cancels the command
-            if (cHeightRes.Status == PromptStatus.Cancel) return;
+            if (cOthersRes.Status == PromptStatus.Cancel) return;
 
-            // Prompt for the column width
-            PromptDoubleResult cDiameterRes;
-            PromptDistanceOptions cDiameterOpts = new PromptDistanceOptions("");
-            cDiameterOpts.Message = "\nEnter the column diameter: ";
-            cDiameterOpts.DefaultValue = 6;
-            cDiameterRes = acDoc.Editor.GetDistance(cDiameterOpts);
-            cDiameter = cDiameterRes.Value;
+            while (cOthersRes.Status == PromptStatus.OK)
+            {
+                switch (cOthersRes.StringResult)
+                {
+                    case "BaseplateHeight":
+                        bHeightRes = acDoc.Editor.GetDistance(bHeightOpts);
+                        if (bHeightRes.Status != PromptStatus.OK) return;
+                        bHeight = bHeightRes.Value;
+                        break;
+                    case "Style":
+                        cStyleRes = acDoc.Editor.GetKeywords(cStyleOpts);
+                        style = cStyleRes.StringResult;
+                        if (cStyleRes.Status == PromptStatus.Cancel) return;
+                        break;
+                    default:
+                        Application.ShowAlertDialog("Invalid Keyword");
+                        break;
+                }
 
-            // Exit if the user presses ESC or cancels the command
-            if (cDiameterRes.Status == PromptStatus.Cancel) return;
+                // Re-prompt for keywords
+                cOthersRes = acDoc.Editor.GetKeywords(cOthersOpts);
 
-            // Prompt for the base width
-            PromptDoubleResult bDiameterRes;
-            PromptDistanceOptions bDiameterOpts = new PromptDistanceOptions("");
-            bDiameterOpts.Message = "\nEnter the baseplate diameter: ";
-            bDiameterOpts.DefaultValue = 14;
-            bDiameterRes = acDoc.Editor.GetDistance(bDiameterOpts);
-            bDiameter = bDiameterRes.Value;
+                // Exit if the user presses ESC or cancels the command
+                if (cOthersRes.Status == PromptStatus.Cancel) return;
+            }
 
-            // Exit if the user presses ESC or cancels the command
-            if (bDiameterRes.Status == PromptStatus.Cancel) return;
-
-            //// Prompt for the base height
-            //PromptDoubleResult bHeightRes;
-            //PromptDistanceOptions bHeightOpts = new PromptDistanceOptions("");
-            //bHeightOpts.Message = "\nEnter the baseplate height: ";
-            //bHeightOpts.DefaultValue = 0.75;
-            //bHeightRes = acDoc.Editor.GetDistance(bHeightOpts);
-            //double bHeight = bHeightRes.Value;
-
-            //// Exit if the user presses ESC or cancels the command
-            //if (bHeightRes.Status == PromptStatus.Cancel) return;
-
-            //// Prompt for the column orientation on the baseplate
-            //PromptKeywordOptions cPlaceOpts = new PromptKeywordOptions("");
-            //cPlaceOpts.Message = "\nEnter baseplate offset: ";
-            //cPlaceOpts.Keywords.Add("Center");
-            //cPlaceOpts.Keywords.Add("Side");
-            //cPlaceOpts.Keywords.Add("Corner");
-            //cPlaceOpts.Keywords.Default = "Center";
-            //cPlaceOpts.AllowArbitraryInput = false;
-            //PromptResult cPlaceRes = acDoc.Editor.GetKeywords(cPlaceOpts);
-
-            //// Exit if the user presses ESC or cancels the command
-            //if (cPlaceRes.Status == PromptStatus.Cancel) return;
-
-            // Create Column block
-            Column mezzColumn = new Column(db: acCurDb,
+            // Create beam
+            Column columnBlock = new Column(db: acCurDb,
                 height: cHeight,
-                width: cDiameter,
-                baseWidth: bDiameter);
+                width: cWidth,
+                baseWidth: bWidth,
+                baseHeight: bHeight);
 
-            mezzColumn.Build();
-
-            //// Open the active viewport
-            //ViewportTableRecord acVportTblRec;
-            //acVportTblRec = acTrans.GetObject(acDoc.Editor.ActiveViewportId,
-            //                                  OpenMode.ForWrite) as ViewportTableRecord;
-
-            //// Save the new objects to the database
-            //acTrans.Commit();
-
+            columnBlock.Build();
         }
 
     }
@@ -283,7 +310,7 @@ namespace ASI_DOTNET
             this.rodMidLength = (trussHeight - chordWidth) / Math.Cos(rodMidAngle);
 
             // Create beam layer (if necessary)
-            this.layerName = "2D-Mezz-Truss";
+            this.layerName = "3D-Mezz-Truss";
             Color layerColor = Utils.ChooseColor("black");
             Utils.CreateLayer(db, layerName, layerColor);
         }
@@ -944,5 +971,585 @@ namespace ASI_DOTNET
         }
 
     }
-    
+
+    class Frame
+    {
+        // Auto-impl class properties
+        private Database db;
+        public double height { get; private set; }
+        public double width { get; private set; }
+        public double diameter { get; private set; }
+        public string name { get; private set; }
+        public string layerName { get; set; }
+        public ObjectId id { get; private set; }
+
+        // Public constructor
+        public Frame(Database db,
+            double height = 96,
+            double width = 42,
+            double diameter = 3)
+        {
+            this.db = db;
+            this.height = height;
+            this.width = width;
+            this.diameter = diameter;
+            this.name = "Frame - " + height + "x" + width;
+
+            // Create beam layer (if necessary)
+            this.layerName = "3D-Rack-Frame";
+            Color layerColor = Utils.ChooseColor("teal");
+            Utils.CreateLayer(db, layerName, layerColor);
+        }
+
+        public void Build()
+        {
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
+            {
+                // Open the Block table for read
+                BlockTable acBlkTbl;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+
+                if (acBlkTbl.Has(name))
+                {
+                    // Retrieve object id
+                    this.id = acBlkTbl[name];
+                }
+                else
+                {
+                    using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
+                    {
+                        acBlkTblRec.Name = name;
+
+                        // Set the insertion point for the block
+                        acBlkTblRec.Origin = new Point3d(0, 0, 0);
+
+                        // Add frame posts to the block table record
+                        for (double dist = diameter; dist <= width; dist += width - diameter)
+                        {
+                            Solid3d Post = framePost(height, diameter, dist);
+                            acBlkTblRec.AppendEntity(Post);
+                        }
+
+                        // Calculate cross-bracing
+                        Dictionary<string, double> braceData = calcBraces(height, diameter);
+
+                        // Add horizontal cross-braces
+                        horizontalBraces(acBlkTblRec, height, diameter, braceData);
+
+                        // Add angled cross-braces to the block
+                        angleBraces(acBlkTblRec, height, diameter, braceData);
+
+                        /// Add Block to Block Table and close Transaction
+                        acBlkTbl.UpgradeOpen();
+                        acBlkTbl.Add(acBlkTblRec);
+                        acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
+
+                    }
+
+                    // Set block id property
+                    this.id = acBlkTbl[name];
+
+                }
+
+                // Save the new object to the database
+                acTrans.Commit();
+
+            }
+
+        }
+
+        // Build frame post
+        private Solid3d framePost(double height,
+            double diameter,
+            double distance)
+        {
+            Solid3d Post = new Solid3d();
+            Post.SetDatabaseDefaults();
+
+            // Create the 3D solid frame post
+            Post.CreateBox(diameter, diameter, height);
+
+            // Find location for post
+            Point3d pMid = new Point3d(diameter / 2, distance - diameter / 2, height / 2);
+            Vector3d pVec = Point3d.Origin.GetVectorTo(pMid);
+
+            // Position the post
+            Post.TransformBy(Matrix3d.Displacement(pVec));
+
+            // Set block object properties
+            Utils.SetBlockObjectProperties(Post);
+
+            return Post;
+        }
+
+        private Dictionary<string, double> calcBraces(double height,
+            double diameter)
+        {
+            // Initialize dictionary
+            Dictionary<string, double> data = new Dictionary<string, double>();
+
+            // Calculate cross-bracing
+            double bNum;
+            double bSpace = 0;
+            double bAngle = Math.PI;
+            double bSize = 1;
+            double bEndSpace = 8;
+
+            for (bNum = 1; bNum <= Math.Floor((height - bEndSpace) / 12); bNum++)
+            {
+                bSpace = Math.Floor(((height - bEndSpace) - (bNum + 1) * bSize) / bNum);
+                bAngle = Math.Atan2(bSpace - bSize, width - (2 * diameter));
+                if ((bAngle < Math.PI / 3))
+                {
+                    break;
+                }
+            }
+
+            data.Add("num", bNum);
+            data.Add("size", bSize);
+            data.Add("space", bSpace);
+            data.Add("angle", bAngle);
+            data.Add("leftover", height - ((bNum + 1) * bSize) - (bNum * bSpace));
+
+            return data;
+        }
+
+        // Build frame post
+        private void horizontalBraces(BlockTableRecord btr,
+            double height,
+            double diameter,
+            Dictionary<string, double> data)
+        {
+
+            /// Add horizontal cross-braces to the block
+            for (int i = 1; i <= Convert.ToInt32(data["num"]) + 1; i++)
+            {
+                Solid3d brace = new Solid3d();
+                brace.SetDatabaseDefaults();
+
+                // Create the 3D solid horizontal cross brace
+                brace.CreateBox(data["size"], width - 2 * diameter, data["size"]);
+
+                // Find location for brace
+                Point3d bMid = new Point3d(diameter / 2, width / 2,
+                    data["leftover"] / 2 + ((data["space"] + data["size"]) * (i - 1)) + data["size"] / 2);
+                Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
+
+                // Position the brace
+                brace.TransformBy(Matrix3d.Displacement(bVec));
+
+                // Set block object properties
+                Utils.SetBlockObjectProperties(brace);
+
+                btr.AppendEntity(brace);
+            }
+        }
+
+        private void angleBraces(BlockTableRecord btr,
+            double height,
+            double diameter,
+            Dictionary<string, double> data)
+        {
+            // Create polyline of brace profile and rotate to correct orienation
+            Polyline bPoly = new Polyline();
+            bPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
+            bPoly.AddVertexAt(1, new Point2d(data["size"], 0), 0, 0, 0);
+            bPoly.AddVertexAt(2, new Point2d(data["size"], data["size"]), 0, 0, 0);
+            bPoly.AddVertexAt(3, new Point2d(0, data["size"]), 0, 0, 0);
+            bPoly.Closed = true;
+            bPoly.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+
+            /// Create sweep path
+            Line bPath = new Line(Point3d.Origin, new Point3d(0, width - 2 * diameter, data["space"] - data["size"]));
+
+            /// Create swept cross braces
+            for (int i = 1; i <= Convert.ToInt32(data["num"]); i++)
+            {
+                // Create swept brace at origin
+                Solid3d aBrace = Utils.SweepPolylineOverLine(bPoly, bPath);
+
+                // Calculate location
+                double aBxLoc = (diameter / 2) - (data["size"] / 2);
+                double aByLoc = diameter;
+                double aBzLoc = data["leftover"] / 2 + data["size"] * i + data["space"] * (i - 1);
+
+                /// Even braces get rotated 180 deg and different x and y coordinates
+                if (i % 2 == 0)
+                {
+                    aBrace.TransformBy(Matrix3d.Rotation(Math.PI, Vector3d.ZAxis, Point3d.Origin));
+                    aBxLoc = (diameter / 2) + (data["size"] / 2);
+                    aByLoc = width - diameter;
+                }
+
+                // Create location for brace
+                Point3d aMid = new Point3d(aBxLoc, aByLoc, aBzLoc);
+                Vector3d aVec = Point3d.Origin.GetVectorTo(aMid);
+
+                // Position the brace
+                aBrace.TransformBy(Matrix3d.Displacement(aVec));
+
+                // Set block object properties
+                Utils.SetBlockObjectProperties(aBrace);
+
+                // Add brace to block
+                btr.AppendEntity(aBrace);
+            }
+        }
+
+        [CommandMethod("FramePrompt")]
+        public static void FramePrompt()
+        {
+            // Get the current document and database, and start a transaction
+            // !!! Move this outside function
+            Document acDoc = Application.DocumentManager.MdiActiveDocument;
+            Database acCurDb = acDoc.Database;
+
+            // Prompt for the frame height
+            PromptDoubleResult heightRes;
+            PromptDistanceOptions heightOpts = new PromptDistanceOptions("");
+            heightOpts.Message = "\nEnter the frame height: ";
+            heightOpts.DefaultValue = 96;
+            heightRes = acDoc.Editor.GetDistance(heightOpts);
+            double height = heightRes.Value;
+
+            // Exit if the user presses ESC or cancels the command
+            if (heightRes.Status != PromptStatus.OK) return;
+
+            // Prompt for the frame width
+            PromptDoubleResult widthRes;
+            PromptDistanceOptions widthOpts = new PromptDistanceOptions("");
+            widthOpts.Message = "\nEnter the frame width: ";
+            widthOpts.DefaultValue = 36;
+            widthRes = acDoc.Editor.GetDistance(widthOpts);
+            double width = widthRes.Value;
+
+            // Exit if the user presses ESC or cancels the command
+            if (widthRes.Status != PromptStatus.OK) return;
+
+            // Prompt for the frame diameter
+            PromptDoubleResult diameterRes;
+            PromptDistanceOptions diameterOpts = new PromptDistanceOptions("");
+            diameterOpts.Message = "\nEnter the frame width: ";
+            diameterOpts.DefaultValue = 3.0;
+            diameterRes = acDoc.Editor.GetDistance(diameterOpts);
+            double diameter = diameterRes.Value;
+
+            // Exit if the user presses ESC or cancels the command
+            if (diameterRes.Status != PromptStatus.OK) return;
+
+            // Create Frame block
+            Frame rackFrame = new Frame(db: acCurDb,
+                height: height,
+                width: width,
+                diameter: diameter);
+
+            rackFrame.Build();
+        }
+
+    }
+
+    class Beam
+    {
+        // Auto-impl class properties
+        private Database db;
+        public double length { get; private set; }
+        public double height { get; private set; }
+        public double width { get; private set; }
+        public double step { get; private set; }
+        public double thickness { get; private set; }
+        public string name { get; private set; }
+        public string orientation { get; private set; }
+        public string style { get; private set; }
+        public string layerName { get; set; }
+        public Color layerColor { get; set; }
+        public ObjectId id { get; private set; }
+
+        // Public constructor
+        public Beam(Database db,
+            double length = 96,
+            double height = 3,
+            double width = 2,
+            string orient = "X-Axis",
+            string style = "Step")
+        {
+            this.db = db;
+            this.length = length;
+            this.height = height;
+            this.width = width;
+            this.orientation = orient;
+            this.style = style;
+            this.name = "Beam - " + length + "x" + height + "x" + width;
+
+            // Create beam layer (if necessary)
+            if (style == "Step" || style == "Box")
+            {
+                this.layerName = "3D-Rack-Beam";
+                this.layerColor = Utils.ChooseColor("blue");
+            }
+            else if (style == "IBeam" || style == "CChannel")
+            {
+                this.layerName = "3D-Mezz-Beam";
+                this.layerColor = Utils.ChooseColor("blue");
+            }
+
+            Utils.CreateLayer(db, layerName, layerColor);
+        }
+
+        public void Build()
+        {
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
+            {
+                // Open the Block table for read
+                BlockTable acBlkTbl;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+
+                if (acBlkTbl.Has(name))
+                {
+                    // Retrieve object id
+                    this.id = acBlkTbl[name];
+                }
+                else
+                {
+                    // Create new block (record)
+                    using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
+                    {
+                        acBlkTblRec.Name = name;
+
+                        // Set the insertion point for the block
+                        acBlkTblRec.Origin = new Point3d(0, 0, 0);
+
+                        // Create beam profile
+                        Polyline beamPoly = beamProfile(height,
+                            width,
+                            style: style,
+                            orient: orientation);
+
+                        // Create beam path
+                        Line beamLine = beamPath(length, orientation);
+
+                        // Create beam
+                        Solid3d beamSolid = Utils.SweepPolylineOverLine(beamPoly, beamLine);
+
+                        // Set block properties
+                        Utils.SetBlockObjectProperties(beamSolid);
+
+                        // Add entity to Block Table Record
+                        acBlkTblRec.AppendEntity(beamSolid);
+
+                        /// Add Block to Block Table and Transaction
+                        acBlkTbl.UpgradeOpen();
+                        acBlkTbl.Add(acBlkTblRec);
+                        acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
+                    }
+
+                    // Set block id property
+                    this.id = acBlkTbl[name];
+
+                }
+                // Save the new object to the database
+                acTrans.Commit();
+            }
+        }
+
+        // Draw beam profile
+        private Polyline beamProfile(double height,
+            double width,
+            string style = "Step",
+            double stepSize = 0.75,
+            double beamThickness = 0.75,
+            string orient = "X-Axis")
+        {
+            int i = 0;
+
+            /// Create polyline of brace profile and rotate to correct orienation
+            Polyline poly = new Polyline();
+            if (style == "Step")
+            {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, width - stepSize), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + stepSize, width - stepSize), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + stepSize, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
+            }
+            else if (style == "Box")
+            {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
+            }
+            else if (style == "IBeam")
+            {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, (width - beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, (width - beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, (width + beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, (width + beamThickness) / 2), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
+            }
+            else if (style == "CChannel")
+            {
+                poly.AddVertexAt(i, new Point2d(0, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, 0), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-height + beamThickness, beamThickness), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, beamThickness), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(-beamThickness, width), 0, 0, 0);
+                poly.AddVertexAt(i++, new Point2d(0, width), 0, 0, 0);
+            }
+
+            poly.Closed = true;
+            poly.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.YAxis, Point3d.Origin));
+
+            // Rotate beam profile if necessary
+            if (orient == "Y-Axis")
+            {
+                poly.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.ZAxis, Point3d.Origin));
+            }
+
+            return poly;
+        }
+
+        private Line beamPath(double length,
+            string orient)
+        {
+            Line path;
+
+            if (orient == "Y-Axis")
+            {
+                path = new Line(Point3d.Origin, new Point3d(0, length, 0));
+            }
+            else // X-Axis (default)
+            {
+                path = new Line(Point3d.Origin, new Point3d(length, 0, 0));
+            }
+
+            return path;
+        }
+
+        [CommandMethod("BeamPrompt")]
+        public static void BeamPrompt()
+        {
+            // Get the current document and database, and start a transaction
+            // !!! Move this outside function
+            Document acDoc = Application.DocumentManager.MdiActiveDocument;
+            Database acCurDb = acDoc.Database;
+
+            // Prepare prompt for the beam length
+            PromptDoubleResult lengthRes;
+            PromptDistanceOptions lengthOpts = new PromptDistanceOptions("");
+            lengthOpts.Message = "\nEnter the beam length: ";
+            lengthOpts.DefaultValue = 96;
+
+            // Prepare prompt for the beam height
+            PromptDoubleResult heightRes;
+            PromptDistanceOptions heightOpts = new PromptDistanceOptions("");
+            heightOpts.Message = "\nEnter the beam height: ";
+            heightOpts.DefaultValue = 3;
+
+            // Prepare prompt for the beam width
+            PromptDoubleResult widthRes;
+            PromptDistanceOptions widthOpts = new PromptDistanceOptions("");
+            widthOpts.Message = "\nEnter the beam width: ";
+            widthOpts.DefaultValue = 2;
+
+            // Prepare prompt for other options
+            PromptResult bOthersRes;
+            PromptKeywordOptions bOthersOpts = new PromptKeywordOptions("");
+            bOthersOpts.Message = "\nBeam Options: ";
+            bOthersOpts.Keywords.Add("Orientation");
+            bOthersOpts.Keywords.Add("Style");
+            bOthersOpts.AllowArbitraryInput = false;
+            bOthersOpts.AllowNone = true;
+
+            // Prepare prompt for the beam orientation
+            string orientation = "X-Axis";
+            PromptResult bOrientRes;
+            PromptKeywordOptions bOrientOpts = new PromptKeywordOptions("");
+            bOrientOpts.Message = "\nEnter beam orientation: ";
+            bOrientOpts.Keywords.Add("X-Axis");
+            bOrientOpts.Keywords.Add("Y-Axis");
+            bOrientOpts.Keywords.Default = "X-Axis";
+            bOrientOpts.AllowArbitraryInput = false;
+
+            // Prepare prompt for the beam style
+            string style = "Step";
+            PromptResult bStyleRes;
+            PromptKeywordOptions bStyleOpts = new PromptKeywordOptions("");
+            bStyleOpts.Message = "\nEnter beam style: ";
+            bStyleOpts.Keywords.Add("Step");
+            bStyleOpts.Keywords.Add("Box");
+            bStyleOpts.Keywords.Add("IBeam");
+            bStyleOpts.Keywords.Add("CChannel");
+            bStyleOpts.Keywords.Default = "Step";
+            bStyleOpts.AllowArbitraryInput = false;
+
+            // Prompt for beam length
+            lengthRes = acDoc.Editor.GetDistance(lengthOpts);
+            if (lengthRes.Status != PromptStatus.OK) return;
+            double length = lengthRes.Value;
+
+            // Prompt for beam height
+            heightRes = acDoc.Editor.GetDistance(heightOpts);
+            if (heightRes.Status != PromptStatus.OK) return;
+            double height = heightRes.Value;
+
+            // Prompt for beam width
+            widthRes = acDoc.Editor.GetDistance(widthOpts);
+            if (widthRes.Status != PromptStatus.OK) return;
+            double width = widthRes.Value;
+
+            // Prompt for other options
+            bOthersRes = acDoc.Editor.GetKeywords(bOthersOpts);
+
+            // Exit if the user presses ESC or cancels the command
+            if (bOthersRes.Status == PromptStatus.Cancel) return;
+
+            while (bOthersRes.Status == PromptStatus.OK)
+            {
+                switch (bOthersRes.StringResult)
+                {
+                    case "Orientation":
+                        bOrientRes = acDoc.Editor.GetKeywords(bOrientOpts);
+                        orientation = bOrientRes.StringResult;
+                        if (bOrientRes.Status != PromptStatus.OK) return;
+                        break;
+                    case "Style":
+                        bStyleRes = acDoc.Editor.GetKeywords(bStyleOpts);
+                        style = bStyleRes.StringResult;
+                        if (bStyleRes.Status == PromptStatus.Cancel) return;
+                        break;
+                    default:
+                        Application.ShowAlertDialog("Invalid Keyword");
+                        break;
+                }
+
+                // Re-prompt for keywords
+                bOthersRes = acDoc.Editor.GetKeywords(bOthersOpts);
+
+                // Exit if the user presses ESC or cancels the command
+                if (bOthersRes.Status == PromptStatus.Cancel) return;
+            }
+
+            // Create beam
+            Beam solidBeam = new Beam(db: acCurDb,
+                length: length,
+                height: height,
+                width: width,
+                orient: orientation,
+                style: style);
+
+            solidBeam.Build();
+        }
+
+    }
+
 }
