@@ -85,7 +85,7 @@ namespace ASI_DOTNET
                         acBlkTblRec.Origin = new Point3d(0, 0, 0);
                         
                         // Calculate locations
-                        Point3d cMid = new Point3d(width / 2, width / 2, height / 2);
+                        Point3d cMid = new Point3d(width / 2, width / 2, (height + baseHeight) / 2);
                         Vector3d cVec = Point3d.Origin.GetVectorTo(cMid);
                         Point3d bMid = new Point3d(width / 2, width / 2, baseHeight / 2);
                         Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
