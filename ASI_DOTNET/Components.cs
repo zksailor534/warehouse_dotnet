@@ -15,6 +15,7 @@ using Autodesk.AutoCAD.Colors;
 [assembly: CommandClass(typeof(ASI_DOTNET.Truss))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Frame))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Beam))]
+[assembly: CommandClass(typeof(ASI_DOTNET.Rail))]
 
 namespace ASI_DOTNET
 {
@@ -1550,6 +1551,349 @@ namespace ASI_DOTNET
             solidBeam.Build();
         }
 
+    }
+
+    class Rail
+    {
+        // Auto-impl class properties
+        public Database db { get; private set; }
+        public Point3dCollection points { get; private set; }
+        public double height { get; private set; }
+        public int numSections { get; private set; }
+        public int tiers { get; set; }
+        public double[] tierHeight { get; set; }
+        public double postWidth { get; private set; }
+        public double defaultRailLength { get; set; }
+        public double railWidth { get; private set; }
+        public string layerName { get; set; }
+        public bool firstPost { get; set; }
+        public bool lastPost { get; set; }
+        public Line[] pathSections { get; private set; }
+        public double[] pathOrientation { get; private set; }
+        public double[] pathVerticalAngle { get; private set; }
+        public double[] postOrientation { get; private set; }
+        public double[] railSections { get; private set; }
+        public double[] railLength { get; private set; }
+
+        // Public constructor
+        public Rail(Database db,
+            Point3dCollection pts)
+        {
+            Color layerColor;
+            this.db = db;
+            this.points = pts;
+            this.numSections = points.Count - 1;
+
+            // Set some defaults
+            this.height = 36;
+            this.tierHeight = new double[2] {height - 16, height};
+            this.tiers = tierHeight.GetLength(0);
+            this.postWidth = 1.5;
+            this.railWidth = 1.5;
+            this.defaultRailLength = 60;
+            this.railLength = new double[numSections];
+
+            // Create beam layer (if necessary)
+            this.layerName = "3D-Mezz-Rail";
+            layerColor = Utils.ChooseColor("yellow");
+            Utils.CreateLayer(db, layerName, layerColor);
+
+            // Set array sizes
+            this.pathSections = new Line[numSections];
+            this.pathOrientation = new double[numSections];
+            this.pathVerticalAngle = new double[numSections];
+            this.postOrientation = new double[numSections];
+            this.railSections = new double[numSections];
+
+            // Loop over number of railing sections for initial section calculations
+            for (int s = 0; s < numSections; s++)
+            {
+                // Get current path section
+                this.pathSections[s] = new Line(points[s], points[s + 1]);
+                this.pathOrientation[s] = Utils.PolarAnglePhi(pathSections[s]);
+                this.pathVerticalAngle[s] = Utils.PolarAngleTheta(pathSections[s]);
+            }
+
+            // Loop over number of railing sections again for error checking
+            for (int s = 0; s < numSections; s++)
+            {
+                // Error check for orientation
+                if (pathOrientation[s] % (Math.PI / 2) != 0)
+                {
+                    Application.ShowAlertDialog("Invalid railing section: must be at orthogonal angles." +
+                        "\nOrientation: " + pathOrientation[s] +
+                        "\nModulus with PI/2: " + pathOrientation[s] % (Math.PI / 2));
+                    continue;
+                }
+
+                // Error checks for section length
+                if (pathSections[s].Length < (2 * postWidth))
+                {
+                    Application.ShowAlertDialog("Invalid railing section: too short.");
+                    continue;
+                }
+            }
+
+            // Loop over number of railing sections for detailed section calculations
+            for (int s = 0; s < numSections; s++)
+            {
+                // Set post orientation
+                if (s == 0) this.postOrientation[s] = Math.Sin(pathOrientation[s + 1] - pathOrientation[s]);
+                else
+                {
+                    this.postOrientation[s] = Math.Sin(pathOrientation[s] - pathOrientation[s - 1]);
+
+                    if (postOrientation[s] != postOrientation[s - 1]) // This doesn't work correctly!!!
+                    {
+                        this.pathSections[s].StartPoint.Add(new Vector3d(
+                            -postWidth * Math.Cos(pathOrientation[s]),
+                            -postWidth * Math.Sin(pathOrientation[s]),
+                            0));
+                        //Application.ShowAlertDialog("Section: " + s +
+                        //    "\nMoved section start point by:" +
+                        //    "\nX = " + -postWidth * Math.Sin(pathOrientation[s]) +
+                        //    "\nY = " + -postWidth * Math.Cos(pathOrientation[s]));
+                    }
+                }
+                    
+                // Calculate rail sections and length (at least 1 section)
+                this.railSections[s] = Math.Max(1, Math.Round(pathSections[s].Length /
+                    (defaultRailLength - postWidth)));
+                this.railLength[s] = ((pathSections[s].Length - ((railSections[s] + 1) *
+                    postWidth)) / railSections[s]);
+            } 
+        }
+
+        public void Build()
+        {
+            // Declare variables
+            Line section;
+            Solid3d post;
+            Solid3d rail;
+            Vector3d startVector;
+            Entity tempEnt;
+
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
+            {
+                // Open the Block table for read
+                BlockTable acBlkTbl;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+
+                // Open the Block table record Model space for write
+                BlockTableRecord modelBlkTblRec = acTrans.GetObject(acBlkTbl[BlockTableRecord.ModelSpace],
+                    OpenMode.ForWrite) as BlockTableRecord;
+
+
+                // Loop over number of railing sections
+                for (int s = 0; s < numSections; s++)
+                {
+                    // Get current path section
+                    section = pathSections[s];
+
+                    // Create post
+                    post = CreatePost(height, postWidth, pathVerticalAngle[s],
+                        pathOrientation[s], postOrientation[s]);
+                    post.Layer = layerName;
+
+                    // Create rail section
+                    rail = CreateRail(railLength[s], railWidth, pathVerticalAngle[s],
+                        pathOrientation[s], postOrientation[s]);
+                    rail.Layer = layerName;
+
+                    // Position first post (if necessary) and add to model and transaction
+                    startVector = section.StartPoint - Point3d.Origin;
+                    if (s == 0)
+                    {
+                        tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
+                        modelBlkTblRec.AppendEntity(tempEnt);
+                        acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+                    }
+
+                    // Loop over other rail sections
+                    for (int i = 1; i <= railSections[s]; i++)
+                    {
+                        // Position rails and add to model and transaction
+                        foreach (double t in tierHeight)
+                        {
+                            tempEnt = rail.GetTransformedCopy(Matrix3d.Displacement(
+                                startVector.Add(RailLocation(t, postWidth, pathVerticalAngle[s], pathOrientation[s]))));
+                            modelBlkTblRec.AppendEntity(tempEnt);
+                            acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+                        }
+
+                        // Determine base point for next post
+                        startVector = section.GetPointAtDist((railLength[s] + postWidth) * i) - Point3d.Origin;
+
+                        // Position post and add to model and transaction
+                        tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
+                        modelBlkTblRec.AppendEntity(tempEnt);
+                        acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+                    }
+                }
+
+                // Save the transaction
+                acTrans.Commit();
+
+            }
+
+        }
+
+        private static Solid3d CreatePost(double height,
+            double width,
+            double vAngle,
+            double oAngle,
+            double side)
+        {
+            // Check value of side
+            if (Math.Abs(side) != 1)
+            {
+                Application.ShowAlertDialog("Invalid argument in CreatePost." +
+                    "\nside must equal 1 || -1" +
+                    "\nside = " + side);
+                return new Solid3d();
+            }
+
+            // Calculate angle offset
+            double offset = width / Math.Tan(vAngle);
+
+            // Create polyline of rail post profile
+            Polyline postPoly = new Polyline();
+            postPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
+            postPoly.AddVertexAt(1, new Point2d(width, offset), 0, 0, 0);
+            postPoly.AddVertexAt(2, new Point2d(width, height + offset), 0, 0, 0);
+            postPoly.AddVertexAt(3, new Point2d(0, height), 0, 0, 0);
+            postPoly.Closed = true;
+
+            // Create the post
+            Solid3d post = Utils.ExtrudePolyline(postPoly, -side * width);
+
+            // Position the post vertically
+            post.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+
+            // Rotate the post
+            post.TransformBy(Matrix3d.Rotation(oAngle, Vector3d.ZAxis, Point3d.Origin));
+
+            return post;
+        }
+
+        private static Vector3d RailLocation(double height,
+            double width,
+            double vAngle,
+            double oAngle)
+        {
+            // Calculate angle offset
+            double offset = width / Math.Tan(vAngle);
+
+            // Point coordinates
+            double x = width * Math.Cos(oAngle);
+            double y = width * Math.Sin(oAngle);
+            double z = offset + height;
+
+            return new Vector3d(x, y, z);
+        }
+
+        private static Solid3d CreateRail(double length,
+            double width,
+            double vAngle,
+            double oAngle,
+            double side)
+        {
+            // Check value of side
+            if (Math.Abs(side) != 1)
+            {
+                Application.ShowAlertDialog("Invalid argument in CreatePost." +
+                    "\nside must equal 1 || -1" +
+                    "\nside = " + side);
+                return new Solid3d();
+            }
+
+            // Calculate angle offset
+            double offset = length / Math.Tan(vAngle);
+
+            // Create polyline of rail profile
+            Polyline railPoly = new Polyline();
+            railPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
+            railPoly.AddVertexAt(1, new Point2d(0, width), 0, 0, 0);
+            railPoly.AddVertexAt(2, new Point2d(length, width + offset), 0, 0, 0);
+            railPoly.AddVertexAt(3, new Point2d(length, offset), 0, 0, 0);
+            railPoly.Closed = true;
+
+            // Create the rail
+            Solid3d rail = Utils.ExtrudePolyline(railPoly, side * width);
+
+            // Position the rail vertically
+            rail.TransformBy(Matrix3d.Rotation(-Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+
+            // Rotate the rail
+            rail.TransformBy(Matrix3d.Rotation(oAngle, Vector3d.ZAxis, Point3d.Origin));
+
+            return rail;
+        }
+
+        [CommandMethod("RailPrompt")]
+        public static void RailPrompt()
+        {
+            // Declare variables
+            Point3dCollection pts = new Point3dCollection();
+            bool firstPost = true;
+            bool lastPost = true;
+
+            // Get the current document and database, and start a transaction
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Database db = doc.Database;
+            
+            // Prepare prompt for points
+            PromptPointResult ptRes;
+            PromptPointOptions ptOpts = new PromptPointOptions("");
+            ptOpts.SetMessageAndKeywords("\nEnter point or [FirstPost/LastPost]",
+                "FirstPost LastPost");
+            ptOpts.AllowNone = true;
+
+            // Prepare prompt for posts
+            PromptResult postRes;
+            PromptKeywordOptions postOpts = new PromptKeywordOptions("");
+            postOpts.Message = "\nDisplay post? ";
+            postOpts.Keywords.Add("True");
+            postOpts.Keywords.Add("False");
+            postOpts.Keywords.Default = "True";
+            postOpts.AllowArbitraryInput = false;
+
+            do
+            {
+                ptRes = doc.Editor.GetPoint(ptOpts);
+                if (ptRes.Status == PromptStatus.Keyword)
+                    switch (ptRes.StringResult)
+                    {
+                        case "FirstPost":
+                            postRes = doc.Editor.GetKeywords(postOpts);
+                            if (postRes.Status != PromptStatus.OK) return;
+                            if (postRes.StringResult == "False") firstPost = false;
+                            break;
+                        case "LastPost":
+                            postRes = doc.Editor.GetKeywords(postOpts);
+                            if (postRes.Status != PromptStatus.OK) return;
+                            if (postRes.StringResult == "False") lastPost = false;
+                            break;
+                        default:
+                            break;
+                    }
+                else if (ptRes.Status == PromptStatus.OK)
+                {
+                    pts.Add(ptRes.Value);
+                    ptOpts.BasePoint = ptRes.Value;
+                    ptOpts.UseBasePoint = true;
+                    ptOpts.UseDashedLine = true;
+                }
+            } while (ptRes.Status != PromptStatus.None);
+
+            if (ptRes.Status != PromptStatus.None) return;
+
+            Rail rail = new Rail(db, pts);
+            rail.firstPost = firstPost;
+            rail.lastPost = lastPost;
+            rail.Build();
+        }
+        
     }
 
 }

@@ -66,7 +66,7 @@ namespace ASI_DOTNET
                     id = 1;
                     break;
                 case "yellow":
-                    id = 2;
+                    id = 52;
                     break;
                 case "green":
                     id = 3;
@@ -191,6 +191,26 @@ namespace ASI_DOTNET
         public static double ToRadians(this double val)
         {
             return (Math.PI / 180) * val;
+        }
+
+        public static double ToDegrees(this double val)
+        {
+            return (180 / Math.PI) * val;
+        }
+
+        public static double PolarAngleTheta(Line l)
+        {
+            double x = l.EndPoint.X - l.StartPoint.X;
+            double y = l.EndPoint.Y - l.StartPoint.Y;
+            double z = l.EndPoint.Z - l.StartPoint.Z;
+            return Math.Acos(z / Math.Sqrt(x * x + y * y + z * z));
+        }
+
+        public static double PolarAnglePhi(Line l)
+        {
+            double x = l.EndPoint.X - l.StartPoint.X;
+            double y = l.EndPoint.Y - l.StartPoint.Y;
+            return Math.Atan2(y, x);
         }
     }
 }
