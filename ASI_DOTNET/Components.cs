@@ -1643,16 +1643,12 @@ namespace ASI_DOTNET
                 {
                     this.postOrientation[s] = Math.Sin(pathOrientation[s] - pathOrientation[s - 1]);
 
-                    if (postOrientation[s] != postOrientation[s - 1]) // This doesn't work correctly!!!
+                    if (postOrientation[s] != postOrientation[s - 1])
                     {
-                        this.pathSections[s].StartPoint.Add(new Vector3d(
+                        this.pathSections[s].StartPoint = pathSections[s].StartPoint + new Vector3d(
                             -postWidth * Math.Cos(pathOrientation[s]),
                             -postWidth * Math.Sin(pathOrientation[s]),
-                            0));
-                        //Application.ShowAlertDialog("Section: " + s +
-                        //    "\nMoved section start point by:" +
-                        //    "\nX = " + -postWidth * Math.Sin(pathOrientation[s]) +
-                        //    "\nY = " + -postWidth * Math.Cos(pathOrientation[s]));
+                            0);
                     }
                 }
                     
@@ -1682,7 +1678,6 @@ namespace ASI_DOTNET
                 // Open the Block table record Model space for write
                 BlockTableRecord modelBlkTblRec = acTrans.GetObject(acBlkTbl[BlockTableRecord.ModelSpace],
                     OpenMode.ForWrite) as BlockTableRecord;
-
 
                 // Loop over number of railing sections
                 for (int s = 0; s < numSections; s++)
