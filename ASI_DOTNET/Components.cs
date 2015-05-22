@@ -1638,7 +1638,8 @@ namespace ASI_DOTNET
             for (int s = 0; s < numSections; s++)
             {
                 // Set post orientation
-                if (s == 0) this.postOrientation[s] = Math.Sin(pathOrientation[s + 1] - pathOrientation[s]);
+                if (numSections == 1) this.postOrientation[s] = 1;
+                else if (s == 0) this.postOrientation[s] = Math.Sin(pathOrientation[s + 1] - pathOrientation[s]);
                 else
                 {
                     this.postOrientation[s] = Math.Sin(pathOrientation[s] - pathOrientation[s - 1]);
@@ -1803,14 +1804,14 @@ namespace ASI_DOTNET
             }
 
             // Calculate angle offset
-            double offset = length / Math.Tan(vAngle);
+            double vOffset = length * Math.Cos(vAngle);
 
             // Create polyline of rail profile
             Polyline railPoly = new Polyline();
             railPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
             railPoly.AddVertexAt(1, new Point2d(0, width), 0, 0, 0);
-            railPoly.AddVertexAt(2, new Point2d(length, width + offset), 0, 0, 0);
-            railPoly.AddVertexAt(3, new Point2d(length, offset), 0, 0, 0);
+            railPoly.AddVertexAt(2, new Point2d(length * Math.Sin(vAngle), width - vOffset), 0, 0, 0);
+            railPoly.AddVertexAt(3, new Point2d(length * Math.Sin(vAngle), -vOffset), 0, 0, 0);
             railPoly.Closed = true;
 
             // Create the rail
@@ -1856,6 +1857,7 @@ namespace ASI_DOTNET
             do
             {
                 ptRes = doc.Editor.GetPoint(ptOpts);
+                if (ptRes.Status == PromptStatus.Cancel) return;
                 if (ptRes.Status == PromptStatus.Keyword)
                     switch (ptRes.StringResult)
                     {
