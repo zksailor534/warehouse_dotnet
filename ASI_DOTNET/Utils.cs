@@ -212,5 +212,10 @@ namespace ASI_DOTNET
             double y = l.EndPoint.Y - l.StartPoint.Y;
             return Math.Atan2(y, x);
         }
+
+        public static Vector3d UnitVector(this Vector3d val)
+        {
+            return val / val.Length;
+        }
     }
 }

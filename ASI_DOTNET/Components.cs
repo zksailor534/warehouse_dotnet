@@ -16,6 +16,7 @@ using Autodesk.AutoCAD.Colors;
 [assembly: CommandClass(typeof(ASI_DOTNET.Frame))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Beam))]
 [assembly: CommandClass(typeof(ASI_DOTNET.Rail))]
+[assembly: CommandClass(typeof(ASI_DOTNET.Stair))]
 
 namespace ASI_DOTNET
 {
@@ -1891,6 +1892,275 @@ namespace ASI_DOTNET
             rail.Build();
         }
         
+    }
+
+    class Stair
+    {
+        // Auto-impl class properties
+        public Database db { get; private set; }
+        public double height { get; private set; }
+        public double width { get; private set; }
+        public double defaultStairHeight { get; set; }
+        public int numStairs { get; private set; }
+        public double stairHeight { get; private set; }
+        public double stairDepth { get; set; }
+        public double length { get; private set; }
+        public double stringerWidth { get; set; }
+        public double stringerDepth { get; set; }
+        public double treadHeight { get; set; }
+        public Vector3d lengthVector { get; set; }
+        public Vector3d widthVector { get; set; }
+        public string layerName { get; set; }
+
+        // Other properties
+        private Point3d basePoint;
+        private Point3d topPoint;
+
+        public Point3d stairTopPoint
+        {
+            get { return topPoint; }
+            set
+            {
+                this.topPoint = value;
+                this.basePoint = topPoint.Add(new Vector3d(
+                    (length * lengthVector.UnitVector().X),
+                    (length * lengthVector.UnitVector().Y),
+                    -height));
+            }
+        }
+
+        public Point3d stairBasePoint
+        {
+            get { return basePoint; }
+            set
+            {
+                this.basePoint = value;
+                this.topPoint = basePoint.Add(new Vector3d(
+                    (length * -lengthVector.UnitVector().X),
+                    (length * -lengthVector.UnitVector().Y),
+                    height));
+            }
+        }
+
+        // Public constructor
+        public Stair(Database db,
+            double height,
+            double width)
+        {
+            Color layerColor;
+            this.db = db;
+            this.height = height;
+            this.width = width;
+
+            // Set some defaults
+            this.defaultStairHeight = 7;
+            this.stairDepth = 11;
+            this.stringerWidth = 1.5;
+            this.stringerDepth = 12;
+            this.treadHeight = 1;
+            this.basePoint = Point3d.Origin;
+            this.lengthVector = -Vector3d.XAxis;
+            this.widthVector = -Vector3d.YAxis;
+
+            // Calculate number of stairs
+            this.numStairs = Convert.ToInt32(Math.Max(1, Math.Round(height / defaultStairHeight)));
+
+            // Calculate stair height
+            this.stairHeight = height / numStairs;
+
+            // Calculate stair length
+            this.length = (numStairs - 1) * stairDepth;
+
+            // Create beam layer (if necessary)
+            this.layerName = "3D-Mezz-Egress";
+            layerColor = Utils.ChooseColor("teal");
+            Utils.CreateLayer(db, layerName, layerColor);
+        }
+
+        public void Build()
+        {
+            // Declare variables
+            Solid3d stringer;
+            Solid3d tread;
+            Vector3d locationVector;
+            Entity tempEnt;
+
+            using (Transaction acTrans = db.TransactionManager.StartTransaction())
+            {
+                // Open the Block table for read
+                BlockTable acBlkTbl;
+                acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+
+                // Open the Block table record Model space for write
+                BlockTableRecord modelBlkTblRec = acTrans.GetObject(acBlkTbl[BlockTableRecord.ModelSpace],
+                    OpenMode.ForWrite) as BlockTableRecord;
+
+                // Create stringer
+                stringer = CreateStringer(numStairs, height, length, stairHeight,
+                    stairDepth, stringerWidth, stringerDepth, lengthVector, widthVector);
+                stringer.Layer = layerName;
+
+                // Create stair tread
+                tread = CreateTread(width, stringerWidth, stairDepth, treadHeight,
+                    lengthVector, widthVector);
+                tread.Layer = layerName;
+
+                // Add first stringer to model and transaction
+                locationVector = basePoint - Point3d.Origin;
+                tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector));
+                modelBlkTblRec.AppendEntity(tempEnt);
+                acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+
+                // Add second stringer to model and transaction
+                tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
+                    new Vector3d(((width - stringerWidth) * widthVector.UnitVector().X),
+                        ((width - stringerWidth) * widthVector.UnitVector().Y),
+                        0))));
+                modelBlkTblRec.AppendEntity(tempEnt);
+                acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+
+                // Loop over stair treads
+                for (int i = 1; i < numStairs; i++)
+                {
+                    tempEnt = tread.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
+                        new Vector3d(
+                            (stringerWidth * widthVector.UnitVector().X) +
+                            ((i - 1) * stairDepth * -lengthVector.UnitVector().X),
+                            (stringerWidth * widthVector.UnitVector().Y) +
+                            ((i - 1) * stairDepth * -lengthVector.UnitVector().Y),
+                            i * stairHeight))));
+                    modelBlkTblRec.AppendEntity(tempEnt);
+                    acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+                }
+
+                // Save the transaction
+                acTrans.Commit();
+
+            }
+
+        }
+
+        private static Solid3d CreateStringer(int numStairs,
+            double height,
+            double length,
+            double stairHeight,
+            double stairDepth,
+            double stringerWidth,
+            double stringerDepth,
+            Vector3d lengthVector,
+            Vector3d widthVector)
+        {
+            // Calculate stair angle and stringer offsets
+            double stairAngle = Math.Atan2(height, length + stairDepth);
+            double vOffset = (stringerDepth - (stairDepth * Math.Sin(stairAngle))) / Math.Cos(stairAngle);
+            double hOffset = (stringerDepth - (stairHeight * Math.Cos(stairAngle))) / Math.Sin(stairAngle);
+
+            // Create polyline of stringer profile
+            Polyline stringerPoly = new Polyline();
+            stringerPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
+            stringerPoly.AddVertexAt(1, new Point2d(0, stairHeight), 0, 0, 0);
+            stringerPoly.AddVertexAt(2, new Point2d(length, height), 0, 0, 0);
+            stringerPoly.AddVertexAt(3, new Point2d(length, height - stairHeight - vOffset), 0, 0, 0);
+            stringerPoly.AddVertexAt(4, new Point2d(hOffset, 0), 0, 0, 0);
+            stringerPoly.Closed = true;
+
+            Application.ShowAlertDialog("Poly 0: " + stringerPoly.GetPoint2dAt(0).ToString() +
+                "\nPoly 1: " + stringerPoly.GetPoint2dAt(1).ToString() +
+                "\nPoly 2: " + stringerPoly.GetPoint2dAt(2).ToString() +
+                "\nPoly 3: " + stringerPoly.GetPoint2dAt(3).ToString() +
+                "\nPoly 4: " + stringerPoly.GetPoint2dAt(4).ToString());
+
+            // Create the stringer
+            Solid3d stringer = Utils.ExtrudePolyline(stringerPoly, stringerWidth);
+
+            // Position the stringer vertically
+            stringer.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+
+            // Position stringer based on width vector
+            if (lengthVector.CrossProduct(widthVector) == -Vector3d.ZAxis)
+            {
+                stringer.TransformBy(Matrix3d.Displacement(new Vector3d(0, stringerWidth, 0)));
+            }
+
+            // Rotate the stringer
+            stringer.TransformBy(Matrix3d.Rotation(
+                Vector3d.XAxis.GetAngleTo(-lengthVector),Vector3d.ZAxis,Point3d.Origin));
+
+            return stringer;
+        }
+
+        private static Solid3d CreateTread(double width,
+            double stringerWidth,
+            double stairDepth,
+            double treadHeight,
+            Vector3d lengthVector,
+            Vector3d widthVector)
+        {
+            // Calculate tread width
+            double treadWidth = width - (2 * stringerWidth);
+
+            // Create polyline of tread profile
+            Polyline treadPoly = new Polyline();
+            treadPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
+            treadPoly.AddVertexAt(1, new Point2d(0, -treadHeight), 0, 0, 0);
+            treadPoly.AddVertexAt(2, new Point2d(stairDepth, -treadHeight), 0, 0, 0);
+            treadPoly.AddVertexAt(3, new Point2d(stairDepth, 0), 0, 0, 0);
+            treadPoly.Closed = true;
+
+            // Create the tread
+            Solid3d tread = Utils.ExtrudePolyline(treadPoly, treadWidth);
+
+            // Position the tread vertically
+            tread.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+
+            // Position tread based on width vector
+            if (lengthVector.CrossProduct(widthVector) == -Vector3d.ZAxis)
+            {
+                tread.TransformBy(Matrix3d.Displacement(new Vector3d(0, treadWidth, 0)));
+            }
+
+            // Rotate the tread
+            tread.TransformBy(Matrix3d.Rotation(
+                Vector3d.XAxis.GetAngleTo(-lengthVector), Vector3d.ZAxis, Point3d.Origin));
+
+            return tread;
+        }
+
+        [CommandMethod("StairPrompt")]
+        public static void StairPrompt()
+        {
+            // Get the current document and database, and start a transaction
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Database db = doc.Database;
+
+            // Prepare prompt for the stair height
+            PromptDoubleResult heightRes;
+            PromptDistanceOptions heightOpts = new PromptDistanceOptions("");
+            heightOpts.Message = "\nEnter the stair height: ";
+            heightOpts.DefaultValue = 108;
+
+            // Prepare prompt for the stair width
+            PromptDoubleResult widthRes;
+            PromptDistanceOptions widthOpts = new PromptDistanceOptions("");
+            widthOpts.Message = "\nEnter the stair width: ";
+            widthOpts.DefaultValue = 36;
+
+            // Prompt for stair height
+            heightRes = doc.Editor.GetDistance(heightOpts);
+            if (heightRes.Status != PromptStatus.OK) return;
+            double height = heightRes.Value;
+
+            // Prompt for stair width
+            widthRes = doc.Editor.GetDistance(widthOpts);
+            if (widthRes.Status != PromptStatus.OK) return;
+            double width = widthRes.Value;
+
+            Stair staircase = new Stair(db,
+                height,
+                width);
+            staircase.Build();
+        }
+
     }
 
 }
