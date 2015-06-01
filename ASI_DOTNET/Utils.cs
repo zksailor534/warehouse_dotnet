@@ -200,10 +200,13 @@ namespace ASI_DOTNET
 
         public static double PolarAngleTheta(Line l)
         {
+            double theta;
             double x = l.EndPoint.X - l.StartPoint.X;
             double y = l.EndPoint.Y - l.StartPoint.Y;
             double z = l.EndPoint.Z - l.StartPoint.Z;
-            return Math.Acos(z / Math.Sqrt(x * x + y * y + z * z));
+            theta = Math.Acos(z / Math.Sqrt(x * x + y * y + z * z));
+
+            return theta;
         }
 
         public static double PolarAnglePhi(Line l)

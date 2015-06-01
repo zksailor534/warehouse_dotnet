@@ -1567,14 +1567,14 @@ namespace ASI_DOTNET
         public double defaultRailLength { get; set; }
         public double railWidth { get; private set; }
         public string layerName { get; set; }
-        public bool firstPost { get; set; }
-        public bool lastPost { get; set; }
-        public Line[] pathSections { get; private set; }
-        public double[] pathOrientation { get; private set; }
-        public double[] pathVerticalAngle { get; private set; }
-        public double[] postOrientation { get; private set; }
-        public double[] railSections { get; private set; }
-        public double[] railLength { get; private set; }
+        public List<bool> firstPost { get; set; }
+        public List<bool> lastPost { get; set; }
+        public List<Line> pathSections { get; private set; }
+        public List<double> pathOrientation { get; private set; }
+        public List<double> pathVerticalAngle { get; private set; }
+        public List<double> postOrientation { get; private set; }
+        public List<double> sectionRails { get; private set; }
+        public List<double> railLength { get; private set; }
 
         // Public constructor
         public Rail(Database db,
@@ -1592,45 +1592,76 @@ namespace ASI_DOTNET
             this.postWidth = 1.5;
             this.railWidth = 1.5;
             this.defaultRailLength = 60;
-            this.railLength = new double[numSections];
 
             // Create beam layer (if necessary)
             this.layerName = "3D-Mezz-Rail";
             layerColor = Utils.ChooseColor("yellow");
             Utils.CreateLayer(db, layerName, layerColor);
 
-            // Set array sizes
-            this.pathSections = new Line[numSections];
-            this.pathOrientation = new double[numSections];
-            this.pathVerticalAngle = new double[numSections];
-            this.postOrientation = new double[numSections];
-            this.railSections = new double[numSections];
+            // Set initial list sizes
+            this.pathSections = new List<Line>();
+            this.pathOrientation = new List<double>();
+            this.pathVerticalAngle = new List<double>();
+            this.postOrientation = new List<double>();
+            this.sectionRails = new List<double>();
+            this.railLength = new List<double>();
+            this.firstPost = new List<bool>();
+            this.lastPost = new List<bool>();
 
             // Loop over number of railing sections for initial section calculations
             for (int s = 0; s < numSections; s++)
             {
                 // Get current path section
-                this.pathSections[s] = new Line(points[s], points[s + 1]);
-                this.pathOrientation[s] = Utils.PolarAnglePhi(pathSections[s]);
-                this.pathVerticalAngle[s] = Utils.PolarAngleTheta(pathSections[s]);
+                this.pathSections.Add(new Line(points[s], points[s + 1]));
+
+                // Path horizontal orientation (phi in polar coordinates)
+                this.pathOrientation.Add(Utils.PolarAnglePhi(pathSections[s]));
+
+                // Path vertical orientation (theta in polar coordinates)
+                this.pathVerticalAngle.Add(Utils.PolarAngleTheta(pathSections[s]));
+
+                // Set first post defaults
+                // Decline sections do not have first post
+                if (pathVerticalAngle[s] > Math.PI / 2) this.firstPost.Add(false);
+                else this.firstPost.Add(true);
+
+                // Set last post defaults
+                // Incline sections do not have last post
+                if (pathVerticalAngle[s] < Math.PI / 2) this.lastPost.Add(false);
+                else this.lastPost.Add(true);
             }
 
             // Loop over number of railing sections again for error checking
             for (int s = 0; s < numSections; s++)
             {
-                // Error check for orientation
+                // Error check for orientation (must be orthogonal)
                 if (pathOrientation[s] % (Math.PI / 2) != 0)
                 {
-                    Application.ShowAlertDialog("Invalid railing section: must be at orthogonal angles." +
+                    Application.ShowAlertDialog("Invalid railing section " + s + ": must be at orthogonal angles." +
                         "\nOrientation: " + pathOrientation[s] +
                         "\nModulus with PI/2: " + pathOrientation[s] % (Math.PI / 2));
+                    RemoveSection(s, numSections, pathSections, pathOrientation,
+                        pathVerticalAngle, postOrientation, sectionRails, railLength);
                     continue;
                 }
 
-                // Error checks for section length
-                if (pathSections[s].Length < (2 * postWidth))
+                // Error checks for section length (must be at least 2 post widths)
+                // Post width corrected for vertical angle
+                if (pathSections[s].Length < (2 * (postWidth / Math.Sin(pathVerticalAngle[s]))))
                 {
-                    Application.ShowAlertDialog("Invalid railing section: too short.");
+                    Application.ShowAlertDialog("Invalid railing section " + s + ": too short.");
+                    RemoveSection(s, numSections, pathSections, pathOrientation,
+                        pathVerticalAngle, postOrientation, sectionRails, railLength);
+                    continue;
+                }
+
+                // Check that section is not too steep (45 degrees or PI / 4 radians from horizontal)
+                if (pathVerticalAngle[s] < (Math.PI / 4) && pathVerticalAngle[s] > (3 * Math.PI / 4))
+                {
+                    Application.ShowAlertDialog("Invalid railing section " + s + ": too steep (must be < 45)." +
+                        "\nAngle (from horizontal): " + (90 - pathVerticalAngle[s].ToDegrees()));
+                    RemoveSection(s, numSections, pathSections, pathOrientation,
+                        pathVerticalAngle, postOrientation, sectionRails, railLength);
                     continue;
                 }
             }
@@ -1639,13 +1670,40 @@ namespace ASI_DOTNET
             for (int s = 0; s < numSections; s++)
             {
                 // Set post orientation
-                if (numSections == 1) this.postOrientation[s] = 1;
-                else if (s == 0) this.postOrientation[s] = Math.Sin(pathOrientation[s + 1] - pathOrientation[s]);
+                // postOrientation = 1 --> left of section line
+                // postOrientation = 0 --> right of section line
+                if (numSections == 1) this.postOrientation.Add(1);
+                else if (s == 0)
+                {
+                    // If path is straight from first section to next
+                    // Find first change and choose orientation from that
+                    if (pathOrientation[s] == pathOrientation[s + 1])
+                    {
+                        for (int i = 1; i < numSections; i++)
+                        {
+                            if (pathOrientation[s] != pathOrientation[i])
+                            {
+                                this.postOrientation.Add(Math.Sin(pathOrientation[i] - pathOrientation[s]));
+                                break;
+                            }
+                            else if (i == numSections - 1)
+                            {
+                                this.postOrientation.Add(1);
+                            }
+                        }
+                    }
+                    else this.postOrientation.Add(Math.Sin(pathOrientation[s + 1] - pathOrientation[s]));
+                }
                 else
                 {
-                    this.postOrientation[s] = Math.Sin(pathOrientation[s] - pathOrientation[s - 1]);
+                    // If path is straight from one section to another, keep orientation
+                    if (pathOrientation[s] == pathOrientation[s - 1]) this.postOrientation.Add(postOrientation[s - 1]);
+                    // Otherwise find orientation based on relationship with previous section
+                    else this.postOrientation.Add(Math.Sin(pathOrientation[s] - pathOrientation[s - 1]));
 
-                    if (postOrientation[s] != postOrientation[s - 1])
+                    // If alternating directions (eg. left turn to right turn)
+                    // move section startpoint to correct point on last post
+                    if (firstPost[s] && lastPost[s - 1] && postOrientation[s] != postOrientation[s - 1])
                     {
                         this.pathSections[s].StartPoint = pathSections[s].StartPoint + new Vector3d(
                             -postWidth * Math.Cos(pathOrientation[s]),
@@ -1653,12 +1711,37 @@ namespace ASI_DOTNET
                             0);
                     }
                 }
-                    
-                // Calculate rail sections and length (at least 1 section)
-                this.railSections[s] = Math.Max(1, Math.Round(pathSections[s].Length /
-                    (defaultRailLength - postWidth)));
-                this.railLength[s] = ((pathSections[s].Length - ((railSections[s] + 1) *
-                    postWidth)) / railSections[s]);
+
+                // Calculate rail sections and length (per section)
+                // Section with no initial or final post
+                if (!firstPost[s] && !lastPost[s])
+                {
+                    this.sectionRails.Add(Math.Max(1, Math.Round(pathSections[s].Length / defaultRailLength)));
+                    this.railLength.Add(((pathSections[s].Length - ((sectionRails[s] - 1) *
+                        (postWidth / Math.Sin(pathVerticalAngle[s])))) / sectionRails[s]));
+                }
+                // Section with no final post
+                if (!lastPost[s])
+                {
+                    this.sectionRails.Add(Math.Max(1, Math.Round(pathSections[s].Length / defaultRailLength)));
+                    this.railLength.Add(((pathSections[s].Length - (sectionRails[s] *
+                        (postWidth / Math.Sin(pathVerticalAngle[s])))) / sectionRails[s]));
+                }
+                // Section with no initial post
+                else if (!firstPost[s])
+                {
+                    this.sectionRails.Add(Math.Max(1, Math.Round(pathSections[s].Length / defaultRailLength)));
+                    this.railLength.Add(((pathSections[s].Length - (sectionRails[s] *
+                        (postWidth / Math.Sin(pathVerticalAngle[s])))) / sectionRails[s]));
+                }
+                else
+                {
+                    this.sectionRails.Add(Math.Max(1, Math.Round(pathSections[s].Length /
+                        (defaultRailLength - postWidth))));
+                    this.railLength.Add(((pathSections[s].Length - ((sectionRails[s] + 1) *
+                        (postWidth / Math.Sin(pathVerticalAngle[s])))) / sectionRails[s]));
+                }
+                
             } 
         }
 
@@ -1670,6 +1753,7 @@ namespace ASI_DOTNET
             Solid3d rail;
             Vector3d startVector;
             Entity tempEnt;
+            double numPosts;
 
             using (Transaction acTrans = db.TransactionManager.StartTransaction())
             {
@@ -1687,6 +1771,9 @@ namespace ASI_DOTNET
                     // Get current path section
                     section = pathSections[s];
 
+                    // Reset number of posts
+                    numPosts = 0;
+
                     // Create post
                     post = CreatePost(height, postWidth, pathVerticalAngle[s],
                         pathOrientation[s], postOrientation[s]);
@@ -1699,32 +1786,42 @@ namespace ASI_DOTNET
 
                     // Position first post (if necessary) and add to model and transaction
                     startVector = section.StartPoint - Point3d.Origin;
-                    if (s == 0)
+                    if (firstPost[s])
                     {
                         tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
+                        numPosts++;
                         modelBlkTblRec.AppendEntity(tempEnt);
                         acTrans.AddNewlyCreatedDBObject(tempEnt, true);
                     }
 
                     // Loop over other rail sections
-                    for (int i = 1; i <= railSections[s]; i++)
+                    for (int i = 1; i <= sectionRails[s]; i++)
                     {
                         // Position rails and add to model and transaction
                         foreach (double t in tierHeight)
                         {
+                            // Pass true to RailLocation if no first post
                             tempEnt = rail.GetTransformedCopy(Matrix3d.Displacement(
-                                startVector.Add(RailLocation(t, postWidth, pathVerticalAngle[s], pathOrientation[s]))));
+                                startVector.Add(RailLocation(t, postWidth, pathVerticalAngle[s],
+                                pathOrientation[s], numPosts == 0))));
                             modelBlkTblRec.AppendEntity(tempEnt);
                             acTrans.AddNewlyCreatedDBObject(tempEnt, true);
                         }
 
                         // Determine base point for next post
-                        startVector = section.GetPointAtDist((railLength[s] + postWidth) * i) - Point3d.Origin;
+                        startVector = section.GetPointAtDist((railLength[s] * i )+
+                                ((postWidth / Math.Sin(pathVerticalAngle[s])) * numPosts)) - Point3d.Origin;
 
                         // Position post and add to model and transaction
-                        tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
-                        modelBlkTblRec.AppendEntity(tempEnt);
-                        acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+                        // Account for lastPost
+                        if (i == sectionRails[s] && !lastPost[s]) continue;
+                        else
+                        {
+                            tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
+                            numPosts++;
+                            modelBlkTblRec.AppendEntity(tempEnt);
+                            acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+                        }
                     }
                 }
 
@@ -1776,15 +1873,28 @@ namespace ASI_DOTNET
         private static Vector3d RailLocation(double height,
             double width,
             double vAngle,
-            double oAngle)
+            double oAngle,
+            bool noFirstPost)
         {
+            // Declare variables
+            double x = 0;
+            double y = 0;
+            double z = 0;
+
             // Calculate angle offset
             double offset = width / Math.Tan(vAngle);
 
             // Point coordinates
-            double x = width * Math.Cos(oAngle);
-            double y = width * Math.Sin(oAngle);
-            double z = offset + height;
+            if (noFirstPost)
+            {
+                z = height;
+            }
+            else
+            {
+                x = width * Math.Cos(oAngle);
+                y = width * Math.Sin(oAngle);
+                z = offset + height;
+            }
 
             return new Vector3d(x, y, z);
         }
@@ -1825,6 +1935,24 @@ namespace ASI_DOTNET
             rail.TransformBy(Matrix3d.Rotation(oAngle, Vector3d.ZAxis, Point3d.Origin));
 
             return rail;
+        }
+
+        private static void RemoveSection(int index,
+            int fullIndex,
+            List<Line> pathSections,
+            List<double> pathOrientation,
+            List<double> pathVerticalAngle,
+            List<double> postOrientation,
+            List<double> sectionRails,
+            List<double> railLength)
+        {
+            fullIndex--;
+            pathSections.RemoveAt(index);
+            pathOrientation.RemoveAt(index);
+            pathVerticalAngle.RemoveAt(index);
+            postOrientation.RemoveAt(index);
+            sectionRails.RemoveAt(index);
+            railLength.RemoveAt(index);
         }
 
         [CommandMethod("RailPrompt")]
@@ -1886,9 +2014,14 @@ namespace ASI_DOTNET
 
             if (ptRes.Status != PromptStatus.None) return;
 
+            // Initialize rail system
             Rail rail = new Rail(db, pts);
-            rail.firstPost = firstPost;
-            rail.lastPost = lastPost;
+
+            // Deal with first and last post input
+            rail.firstPost[0] = firstPost;
+            rail.lastPost[rail.lastPost.Count - 1] = lastPost;
+
+            // Build rail
             rail.Build();
         }
         
