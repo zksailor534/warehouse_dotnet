@@ -1635,11 +1635,10 @@ namespace ASI_DOTNET
             for (int s = 0; s < numSections; s++)
             {
                 // Error check for orientation (must be orthogonal)
-                if (pathOrientation[s] % (Math.PI / 2) != 0)
+                if (!Utils.OrthogonalAngle(pathOrientation[s], 5))
                 {
                     Application.ShowAlertDialog("Invalid railing section " + s + ": must be at orthogonal angles." +
-                        "\nOrientation: " + pathOrientation[s] +
-                        "\nModulus with PI/2: " + pathOrientation[s] % (Math.PI / 2));
+                        "\nOrientation: " + pathOrientation[s].ToDegrees());
                     RemoveSection(s, numSections, pathSections, pathOrientation,
                         pathVerticalAngle, postOrientation, sectionRails, railLength);
                     continue;
@@ -1677,13 +1676,14 @@ namespace ASI_DOTNET
                 {
                     // If path is straight from first section to next
                     // Find first change and choose orientation from that
-                    if (pathOrientation[s] == pathOrientation[s + 1])
+                    if (Math.Round(pathOrientation[s], 3) == Math.Round(pathOrientation[s + 1], 3))
                     {
                         for (int i = 1; i < numSections; i++)
                         {
-                            if (pathOrientation[s] != pathOrientation[i])
+                            if (Math.Round(pathOrientation[s], 3) != Math.Round(pathOrientation[i], 3))
                             {
-                                this.postOrientation.Add(Math.Sin(pathOrientation[i] - pathOrientation[s]));
+                                this.postOrientation.Add(
+                                    Math.Round(Math.Sin(pathOrientation[i] - pathOrientation[s]), 0));
                                 break;
                             }
                             else if (i == numSections - 1)
@@ -1692,12 +1692,22 @@ namespace ASI_DOTNET
                             }
                         }
                     }
-                    else this.postOrientation.Add(Math.Sin(pathOrientation[s + 1] - pathOrientation[s]));
+                    else
+                    {
+                        this.postOrientation.Add(
+                            Math.Round(Math.Sin(pathOrientation[s + 1] - pathOrientation[s]), 0));
+                    }
                 }
                 else
                 {
                     // If path is straight from one section to another, keep orientation
-                    if (pathOrientation[s] == pathOrientation[s - 1]) this.postOrientation.Add(postOrientation[s - 1]);
+                    if (Math.Round(pathOrientation[s], 3) == Math.Round(pathOrientation[s - 1], 3))
+                    {
+                        Application.ShowAlertDialog("Orientation Angles:" +
+                            "\nAngle 1: " + pathOrientation[s].ToDegrees() +
+                            "\nAngle 2: " + pathOrientation[s + 1].ToDegrees());
+                        this.postOrientation.Add(postOrientation[s - 1]);
+                    }
                     // Otherwise find orientation based on relationship with previous section
                     else this.postOrientation.Add(Math.Sin(pathOrientation[s] - pathOrientation[s - 1]));
 
@@ -2196,12 +2206,6 @@ namespace ASI_DOTNET
             stringerPoly.AddVertexAt(3, new Point2d(length, height - stairHeight - vOffset), 0, 0, 0);
             stringerPoly.AddVertexAt(4, new Point2d(hOffset, 0), 0, 0, 0);
             stringerPoly.Closed = true;
-
-            Application.ShowAlertDialog("Poly 0: " + stringerPoly.GetPoint2dAt(0).ToString() +
-                "\nPoly 1: " + stringerPoly.GetPoint2dAt(1).ToString() +
-                "\nPoly 2: " + stringerPoly.GetPoint2dAt(2).ToString() +
-                "\nPoly 3: " + stringerPoly.GetPoint2dAt(3).ToString() +
-                "\nPoly 4: " + stringerPoly.GetPoint2dAt(4).ToString());
 
             // Create the stringer
             Solid3d stringer = Utils.ExtrudePolyline(stringerPoly, stringerWidth);

@@ -216,6 +216,14 @@ namespace ASI_DOTNET
             return Math.Atan2(y, x);
         }
 
+        public static bool OrthogonalAngle(double angle, int sigDig)
+        {
+            double orthoAngle = Math.PI / 2;
+            double modulus = angle % orthoAngle;
+            if (Math.Round(modulus, sigDig) == 0) return true;
+            else return false;
+        }
+
         public static Vector3d UnitVector(this Vector3d val)
         {
             return val / val.Length;
