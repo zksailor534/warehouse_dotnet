@@ -13,11 +13,11 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.PlottingServices;
 using Autodesk.AutoCAD.Colors;
 
-[assembly: CommandClass(typeof(ASI_DOTNET.AcadIO))]
+[assembly: CommandClass(typeof(ASI_DOTNET.AcadCLI))]
 
 namespace ASI_DOTNET
 {
-    class AcadIO
+    class AcadCLI
     {
         [CommandMethod("RackPrompt")]
         public static void RackPrompt()
