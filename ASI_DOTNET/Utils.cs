@@ -216,12 +216,25 @@ namespace ASI_DOTNET
             return Math.Atan2(y, x);
         }
 
+        public static double PolarAnglePhi(Vector3d v)
+        {
+            return Math.Atan2(v.Y, v.X);
+        }
+
         // Creates exactly orthogonal angles (removes small variations)
         public static double OrthogonalAngle(double angle)
         {
             double orthoAngle = Math.PI / 2;
             double multiple = Math.Round(angle / orthoAngle, 0);
             return orthoAngle * multiple;
+        }
+
+        // Creates exactly orthogonal angles (removes small variations)
+        public static bool VerifyOrthogonalAngle(double angle)
+        {
+            double orthoAngle = Math.PI / 2;
+            double modulus = angle % orthoAngle;
+            return modulus == 0;
         }
 
         public static Vector3d UnitVector(this Vector3d val)

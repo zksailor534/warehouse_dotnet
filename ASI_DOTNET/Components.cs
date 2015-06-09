@@ -2142,13 +2142,13 @@ namespace ASI_DOTNET
         public double stringerWidth { get; set; }
         public double stringerDepth { get; set; }
         public double treadHeight { get; set; }
-        public Vector3d lengthVector { get; set; }
         public Vector3d widthVector { get; set; }
         public string layerName { get; set; }
 
         // Other properties
         private Point3d basePoint;
         private Point3d topPoint;
+        private Vector3d lengthVector;
 
         public Point3d stairTopPoint
         {
@@ -2173,6 +2173,20 @@ namespace ASI_DOTNET
                     (length * -lengthVector.UnitVector().X),
                     (length * -lengthVector.UnitVector().Y),
                     height));
+            }
+        }
+
+        public Vector3d stairLengthVector
+        {
+            get { return lengthVector; }
+            set
+            {
+                this.lengthVector = value;
+                this.basePoint = topPoint.Add(new Vector3d(
+                    (length * lengthVector.UnitVector().X),
+                    (length * lengthVector.UnitVector().Y),
+                    -height));
+                this.widthVector = lengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis);
             }
         }
 
@@ -2373,6 +2387,35 @@ namespace ASI_DOTNET
             widthOpts.Message = "\nEnter the stair width: ";
             widthOpts.DefaultValue = 36;
 
+            // Prepare prompt for other options
+            PromptResult othersRes;
+            PromptKeywordOptions othersOpts = new PromptKeywordOptions("");
+            othersOpts.Message = "\nOptions: ";
+            othersOpts.Keywords.Add("TopPoint");
+            othersOpts.Keywords.Add("BottomPoint");
+            othersOpts.AllowArbitraryInput = false;
+            othersOpts.AllowNone = true;
+
+            // Prepare prompt for top point
+            PromptPointResult topPointResult;
+            PromptPointOptions topPointOpts = new PromptPointOptions("");
+            topPointOpts.Message = "\nSelect top point: ";
+            topPointOpts.AllowNone = true;
+
+            // Prepare prompt for bottom point
+            PromptPointResult bottomPointResult;
+            PromptPointOptions bottomPointOpts = new PromptPointOptions("");
+            bottomPointOpts.Message = "\nSelect bottom point: ";
+            bottomPointOpts.AllowNone = true;
+
+            // Prepare prompt for bottom point
+            PromptPointResult vectorPointResult;
+            PromptPointOptions vectorPointOpts = new PromptPointOptions("");
+            vectorPointOpts.Message = "\nSelect stair orientation: ";
+            vectorPointOpts.AllowNone = true;
+            vectorPointOpts.UseBasePoint = true;
+            vectorPointOpts.UseDashedLine = true;
+
             // Prompt for stair height
             heightRes = doc.Editor.GetDistance(heightOpts);
             if (heightRes.Status != PromptStatus.OK) return;
@@ -2383,9 +2426,51 @@ namespace ASI_DOTNET
             if (widthRes.Status != PromptStatus.OK) return;
             double width = widthRes.Value;
 
+            // Create stair object
             Stair staircase = new Stair(db,
                 height,
                 width);
+
+            // Prompt for other options
+            othersRes = doc.Editor.GetKeywords(othersOpts);
+            if (othersRes.Status == PromptStatus.Cancel) return;
+
+            if (othersRes.Status == PromptStatus.OK)
+            {
+                switch (othersRes.StringResult)
+                {
+                    case "TopPoint":
+                        topPointResult = doc.Editor.GetPoint(topPointOpts);
+                        staircase.stairTopPoint = topPointResult.Value;
+                        vectorPointOpts.BasePoint = topPointResult.Value;
+                        vectorPointResult = doc.Editor.GetPoint(vectorPointOpts);
+                        staircase.stairLengthVector = vectorPointResult.Value - topPointResult.Value;
+                        if (! Utils.VerifyOrthogonalAngle(Utils.PolarAnglePhi(staircase.lengthVector)))
+                        {
+                            Application.ShowAlertDialog("Invalid length vector: must be orthogonal.");
+                            return;
+                        }
+                        break;
+                    case "BottomPoint":
+                        bottomPointResult = doc.Editor.GetPoint(bottomPointOpts);
+                        staircase.stairBasePoint = bottomPointResult.Value;
+                        vectorPointOpts.BasePoint = bottomPointResult.Value;
+                        vectorPointResult = doc.Editor.GetPoint(vectorPointOpts);
+                        staircase.stairLengthVector = bottomPointResult.Value - vectorPointResult.Value;
+                        if (! Utils.VerifyOrthogonalAngle(Utils.PolarAnglePhi(staircase.lengthVector)))
+                        {
+                            Application.ShowAlertDialog("Invalid length vector: must be orthogonal.");
+                            return;
+                        }
+                        break;
+                    default:
+                        Application.ShowAlertDialog("Invalid Keyword");
+                        break;
+                }
+
+            }
+
+            // Build stairs
             staircase.Build();
         }
 
