@@ -202,8 +202,8 @@ namespace ASI_DOTNET
                 Column rackColumn = new Column(db,
                     height: columnHeight,
                     width: columnWidth,
-                    baseWidth: columnWidth,
-                    baseHeight: 0);
+                    baseWidth: columnWidth);
+                rackColumn.baseHeight = 0;
                 rackColumn.Build();
                 
                 // Calculate frame locations and add to model space

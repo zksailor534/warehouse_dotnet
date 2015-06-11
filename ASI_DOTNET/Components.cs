@@ -26,26 +26,42 @@ namespace ASI_DOTNET
         private Database db;
         public double height { get; private set; }
         public double width { get; private set; }
-        public double baseHeight { get; private set; }
+        public double baseHeight { get; set; }
         public double baseWidth { get; private set; }
         public string name { get; private set; }
-        public string style { get; private set; }
         public string layerName { get; set; }
         public ObjectId id { get; private set; }
+
+        // Other class properties
+        private string baseOrient;
+
+        public string baseplateOrientation
+        {
+            get { return baseOrient; }
+            set
+            {
+                this.baseOrient = value;
+                if (baseHeight > 0) this.name = "Column - " + height + "in - " + width + "x" + baseWidth + " (" + value + ")";
+                else this.name = "Column - " + height + "x" + width + " (" + value + ")";
+            }
+        }
 
         // Public constructor
         public Column(Database db,
             double height,
             double width,
-            double baseWidth,
-            double baseHeight = 0.75)
+            double baseWidth)
         {
             Color layerColor;
             this.db = db;
             this.height = height;
             this.width = width;
-            this.baseHeight = baseHeight;
             this.baseWidth = baseWidth;
+
+            // Set defaults
+            this.baseHeight = 0.75;
+
+            // Set name and column layer
             if (baseHeight > 0)
             {
                 this.name = "Column - " + height + "in - " + width + "x" + baseWidth;
@@ -87,10 +103,9 @@ namespace ASI_DOTNET
                         acBlkTblRec.Origin = new Point3d(0, 0, 0);
                         
                         // Calculate locations
-                        Point3d cMid = new Point3d(width / 2, width / 2, (height + baseHeight) / 2);
-                        Vector3d cVec = Point3d.Origin.GetVectorTo(cMid);
-                        Point3d bMid = new Point3d(width / 2, width / 2, baseHeight / 2);
-                        Vector3d bVec = Point3d.Origin.GetVectorTo(bMid);
+                        Vector3d cVec = Point3d.Origin.GetVectorTo(
+                            new Point3d(width / 2, width / 2, (height + baseHeight) / 2));
+                        Vector3d bVec = BaseplateLocation(baseOrient, baseWidth, width, baseHeight);
 
                         if (baseHeight > 0)
                         {
@@ -141,12 +156,51 @@ namespace ASI_DOTNET
 
         }
 
+        private static Vector3d BaseplateLocation(string baseOrient,
+            double baseWidth,
+            double columnWidth,
+            double baseHeight)
+        {
+            Point3d middle;
+            
+            switch (baseOrient)
+            {
+                case "+X":
+                    middle = new Point3d(baseWidth / 2, columnWidth / 2, baseHeight / 2);
+                    break;
+                case "-X":
+                    middle = new Point3d(columnWidth - (baseWidth / 2), columnWidth / 2, baseHeight / 2);
+                    break;
+                case "+Y":
+                    middle = new Point3d(columnWidth / 2, baseWidth / 2, baseHeight / 2);
+                    break;
+                case "-Y":
+                    middle = new Point3d(columnWidth / 2, columnWidth - (baseWidth / 2), baseHeight / 2);
+                    break;
+                case "+X+Y":
+                    middle = new Point3d(baseWidth / 2, baseWidth / 2, baseHeight / 2);
+                    break;
+                case "+X-Y":
+                    middle = new Point3d(baseWidth / 2, columnWidth - (baseWidth / 2), baseHeight / 2);
+                    break;
+                case "-X+Y":
+                    middle = new Point3d(columnWidth - (baseWidth / 2), baseWidth / 2, baseHeight / 2);
+                    break;
+                case "-X-Y":
+                    middle = new Point3d(columnWidth - (baseWidth / 2), columnWidth - (baseWidth / 2), baseHeight / 2);
+                    break;
+                default:
+                    middle = new Point3d(columnWidth / 2, columnWidth / 2, baseHeight / 2);
+                    break;
+            }
+            
+
+            return Point3d.Origin.GetVectorTo(middle);
+        }
+
         [CommandMethod("ColumnPrompt")]
         public static void ColumnPrompt()
         {
-            // Declare variables with defaults
-            double bHeight = 0.75;
-
             // Get the current document and database, and start a transaction
             Document acDoc = Application.DocumentManager.MdiActiveDocument;
             Database acCurDb = acDoc.Database;
@@ -180,7 +234,7 @@ namespace ASI_DOTNET
             PromptKeywordOptions cOthersOpts = new PromptKeywordOptions("");
             cOthersOpts.Message = "\nOptions: ";
             cOthersOpts.Keywords.Add("BaseplateHeight");
-            cOthersOpts.Keywords.Add("Style");
+            cOthersOpts.Keywords.Add("BaseplateOrientation");
             cOthersOpts.AllowArbitraryInput = false;
             cOthersOpts.AllowNone = true;
 
@@ -191,16 +245,40 @@ namespace ASI_DOTNET
             bHeightOpts.DefaultValue = 0.75;
             bHeightOpts.AllowNegative = false;
 
-            // Prepare prompt for the column orientation style
-            string style = "Center";
-            PromptResult cStyleRes;
-            PromptKeywordOptions cStyleOpts = new PromptKeywordOptions("");
-            cStyleOpts.Message = "\nEnter style: ";
-            cStyleOpts.Keywords.Add("Center");
-            cStyleOpts.Keywords.Add("Corner");
-            cStyleOpts.Keywords.Add("Side");
-            cStyleOpts.Keywords.Default = "Center";
-            cStyleOpts.AllowArbitraryInput = false;
+            // Prepare first prompt for the baseplate orientation
+            PromptResult bMainOrientRes;
+            PromptKeywordOptions bMainOrientOpts = new PromptKeywordOptions("");
+            bMainOrientOpts.Message = "\nChoose baseplate orientation: ";
+            bMainOrientOpts.Keywords.Add("CEnter");
+            bMainOrientOpts.Keywords.Add("COrner");
+            bMainOrientOpts.Keywords.Add("Side");
+            bMainOrientOpts.Keywords.Default = "CEnter";
+            bMainOrientOpts.AllowArbitraryInput = false;
+            bMainOrientOpts.AllowNone = false;
+
+            // Prepare secondary prompt for the side baseplate orientation
+            PromptResult bSideOrientRes;
+            PromptKeywordOptions bSideOrientOpts = new PromptKeywordOptions("");
+            bSideOrientOpts.Message = "\nChoose baseplate side orientation: ";
+            bSideOrientOpts.Keywords.Add("+X");
+            bSideOrientOpts.Keywords.Add("-X");
+            bSideOrientOpts.Keywords.Add("+Y");
+            bSideOrientOpts.Keywords.Add("-Y");
+            bSideOrientOpts.Keywords.Default = "+X";
+            bSideOrientOpts.AllowArbitraryInput = false;
+            bSideOrientOpts.AllowNone = false;
+
+            // Prepare secondary prompt for the side baseplate orientation
+            PromptResult bCornerOrientRes;
+            PromptKeywordOptions bCornerOrientOpts = new PromptKeywordOptions("");
+            bCornerOrientOpts.Message = "\nChoose baseplate corner orientation: ";
+            bCornerOrientOpts.Keywords.Add("+X+Y");
+            bCornerOrientOpts.Keywords.Add("+X-Y");
+            bCornerOrientOpts.Keywords.Add("-X+Y");
+            bCornerOrientOpts.Keywords.Add("-X-Y");
+            bCornerOrientOpts.Keywords.Default = "+X+Y";
+            bCornerOrientOpts.AllowArbitraryInput = false;
+            bCornerOrientOpts.AllowNone = false;
 
             // Prompt for column height
             cHeightRes = acDoc.Editor.GetDistance(cHeightOpts);
@@ -217,6 +295,12 @@ namespace ASI_DOTNET
             if (bWidthRes.Status != PromptStatus.OK) return;
             double bWidth = bWidthRes.Value;
 
+            // Create column block
+            Column columnBlock = new Column(db: acCurDb,
+                height: cHeight,
+                width: cWidth,
+                baseWidth: bWidth);
+
             // Prompt for other options
             cOthersRes = acDoc.Editor.GetKeywords(cOthersOpts);
 
@@ -230,15 +314,35 @@ namespace ASI_DOTNET
                     case "BaseplateHeight":
                         bHeightRes = acDoc.Editor.GetDistance(bHeightOpts);
                         if (bHeightRes.Status != PromptStatus.OK) return;
-                        bHeight = bHeightRes.Value;
+                        columnBlock.baseHeight = bHeightRes.Value;
                         break;
-                    case "Style":
-                        cStyleRes = acDoc.Editor.GetKeywords(cStyleOpts);
-                        style = cStyleRes.StringResult;
-                        if (cStyleRes.Status == PromptStatus.Cancel) return;
+                    case "BaseplateOrientation":
+                        bMainOrientRes = acDoc.Editor.GetKeywords(bMainOrientOpts);
+                        if (bMainOrientRes.Status == PromptStatus.Cancel) return;
+                        else
+                        {
+                            switch (bMainOrientRes.StringResult)
+                            {
+                                case "CEnter":
+                                    break;
+                                case "Side":
+                                    bSideOrientRes = acDoc.Editor.GetKeywords(bSideOrientOpts);
+                                    if (bSideOrientRes.Status == PromptStatus.Cancel) return;
+                                    columnBlock.baseplateOrientation = bSideOrientRes.StringResult;
+                                    break;
+                                case "COrner":
+                                    bCornerOrientRes = acDoc.Editor.GetKeywords(bCornerOrientOpts);
+                                    if (bCornerOrientRes.Status == PromptStatus.Cancel) return;
+                                    columnBlock.baseplateOrientation = bCornerOrientRes.StringResult;
+                                    break;
+                                default:
+                                    Application.ShowAlertDialog("Invalid Keyword: " + bMainOrientRes.StringResult);
+                                    break;
+                            }
+                        }
                         break;
                     default:
-                        Application.ShowAlertDialog("Invalid Keyword");
+                        Application.ShowAlertDialog("Invalid Keyword: " + cOthersRes.StringResult);
                         break;
                 }
 
@@ -249,13 +353,7 @@ namespace ASI_DOTNET
                 if (cOthersRes.Status == PromptStatus.Cancel) return;
             }
 
-            // Create beam
-            Column columnBlock = new Column(db: acCurDb,
-                height: cHeight,
-                width: cWidth,
-                baseWidth: bWidth,
-                baseHeight: bHeight);
-
+            // Build column
             columnBlock.Build();
         }
 
