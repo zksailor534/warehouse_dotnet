@@ -1370,7 +1370,7 @@ namespace ASI_DOTNET
             double height = 3,
             double width = 2,
             string orient = "X-Axis",
-            string style = "Step")
+            string style = "Box")
         {
             this.db = db;
             this.length = length;
@@ -1381,18 +1381,18 @@ namespace ASI_DOTNET
             this.name = "Beam - " + length + "x" + height + "x" + width;
 
             // Create beam layer (if necessary)
-            if (style == "Step" || style == "Box")
-            {
-                this.layerName = "3D-Rack-Beam";
-                this.layerColor = Utils.ChooseColor("blue");
-            }
-            else if (style == "IBeam" || style == "CChannel")
-            {
-                this.layerName = "3D-Mezz-Beam";
-                this.layerColor = Utils.ChooseColor("blue");
-            }
+            //if (style == "Step" || style == "Box")
+            //{
+            //    this.layerName = "3D-Rack-Beam";
+            //    this.layerColor = Utils.ChooseColor("blue");
+            //}
+            //else if (style == "IBeam" || style == "CChannel")
+            //{
+            //    this.layerName = "3D-Mezz-Beam";
+            //    this.layerColor = Utils.ChooseColor("blue");
+            //}
 
-            Utils.CreateLayer(db, layerName, layerColor);
+            //Utils.CreateLayer(db, layerName, layerColor);
         }
 
         public void Build()
@@ -1422,6 +1422,7 @@ namespace ASI_DOTNET
                         Polyline beamPoly = beamProfile(height,
                             width,
                             style: style,
+                            beamThickness: thickness,
                             orient: orientation);
 
                         // Create beam path
@@ -1454,7 +1455,7 @@ namespace ASI_DOTNET
         // Draw beam profile
         private Polyline beamProfile(double height,
             double width,
-            string style = "Step",
+            string style = "Box",
             double stepSize = 0.75,
             double beamThickness = 0.75,
             string orient = "X-Axis")
@@ -1566,12 +1567,12 @@ namespace ASI_DOTNET
             PromptKeywordOptions bOthersOpts = new PromptKeywordOptions("");
             bOthersOpts.Message = "\nBeam Options: ";
             bOthersOpts.Keywords.Add("Orientation");
+            bOthersOpts.Keywords.Add("Thickness");
             bOthersOpts.Keywords.Add("Style");
             bOthersOpts.AllowArbitraryInput = false;
             bOthersOpts.AllowNone = true;
 
             // Prepare prompt for the beam orientation
-            string orientation = "X-Axis";
             PromptResult bOrientRes;
             PromptKeywordOptions bOrientOpts = new PromptKeywordOptions("");
             bOrientOpts.Message = "\nEnter beam orientation: ";
@@ -1580,8 +1581,13 @@ namespace ASI_DOTNET
             bOrientOpts.Keywords.Default = "X-Axis";
             bOrientOpts.AllowArbitraryInput = false;
 
+            // Prepare prompt for the beam thickness
+            PromptDoubleResult thickRes;
+            PromptDistanceOptions thickOpts = new PromptDistanceOptions("");
+            thickOpts.Message = "\nEnter the beam thickness: ";
+            thickOpts.DefaultValue = 0.75;
+
             // Prepare prompt for the beam style
-            string style = "Step";
             PromptResult bStyleRes;
             PromptKeywordOptions bStyleOpts = new PromptKeywordOptions("");
             bStyleOpts.Message = "\nEnter beam style: ";
@@ -1589,7 +1595,7 @@ namespace ASI_DOTNET
             bStyleOpts.Keywords.Add("Box");
             bStyleOpts.Keywords.Add("IBeam");
             bStyleOpts.Keywords.Add("CChannel");
-            bStyleOpts.Keywords.Default = "Step";
+            bStyleOpts.Keywords.Default = "Box";
             bStyleOpts.AllowArbitraryInput = false;
 
             // Prompt for beam length
@@ -1607,6 +1613,12 @@ namespace ASI_DOTNET
             if (widthRes.Status != PromptStatus.OK) return;
             double width = widthRes.Value;
 
+            // Create beam
+            Beam solidBeam = new Beam(db: acCurDb,
+                length: length,
+                height: height,
+                width: width);
+
             // Prompt for other options
             bOthersRes = acDoc.Editor.GetKeywords(bOthersOpts);
 
@@ -1619,12 +1631,17 @@ namespace ASI_DOTNET
                 {
                     case "Orientation":
                         bOrientRes = acDoc.Editor.GetKeywords(bOrientOpts);
-                        orientation = bOrientRes.StringResult;
+                        solidBeam.orientation = bOrientRes.StringResult;
                         if (bOrientRes.Status != PromptStatus.OK) return;
+                        break;
+                    case "Thickness":
+                        thickRes = acDoc.Editor.GetDistance(thickOpts);
+                        solidBeam.thickness = thickRes.Value;
+                        if (thickRes.Status != PromptStatus.OK) return;
                         break;
                     case "Style":
                         bStyleRes = acDoc.Editor.GetKeywords(bStyleOpts);
-                        style = bStyleRes.StringResult;
+                        solidBeam.style = bStyleRes.StringResult;
                         if (bStyleRes.Status == PromptStatus.Cancel) return;
                         break;
                     default:
@@ -1639,14 +1656,7 @@ namespace ASI_DOTNET
                 if (bOthersRes.Status == PromptStatus.Cancel) return;
             }
 
-            // Create beam
-            Beam solidBeam = new Beam(db: acCurDb,
-                length: length,
-                height: height,
-                width: width,
-                orient: orientation,
-                style: style);
-
+            // Build beam
             solidBeam.Build();
         }
 
@@ -1687,8 +1697,8 @@ namespace ASI_DOTNET
             this.numSections = points.Count - 1;
 
             // Set some defaults
-            this.height = 36;
-            this.tierHeight = new double[2] {height - 16, height};
+            this.height = 42;
+            this.tierHeight = new double[2] {height - 18, height};
             this.tiers = tierHeight.GetLength(0);
             this.postWidth = 1.5;
             this.railWidth = 1.5;
@@ -1872,8 +1882,9 @@ namespace ASI_DOTNET
                     this.railLength.Add(((pathSections[s].Length - ((sectionRails[s] + 1) *
                         (postWidth / Math.Sin(pathVerticalAngle[s])))) / sectionRails[s]));
                 }
-                
-            } 
+
+            }
+
         }
 
         public void Build()
@@ -1923,7 +1934,7 @@ namespace ASI_DOTNET
 
                     // Position first post (if necessary) and add to model and transaction
                     startVector = section.StartPoint - Point3d.Origin;
-                    if (firstPost[s])
+                    if (((s > 0) && !lastPost[s-1]) || firstPost[s])
                     {
                         tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
                         numPosts++;
@@ -1952,15 +1963,15 @@ namespace ASI_DOTNET
                         modelBlkTblRec.AppendEntity(tempEnt);
                         acTrans.AddNewlyCreatedDBObject(tempEnt, true);
 
-                        // Determine base point for next post
-                        startVector = section.GetPointAtDist((railLength[s] * i )+
-                                ((postWidth / Math.Sin(pathVerticalAngle[s])) * numPosts)) - Point3d.Origin;
-
-                        // Position post and add to model and transaction
                         // Account for lastPost
                         if (i == sectionRails[s] && !lastPost[s]) continue;
                         else
                         {
+                            // Determine base point for next post
+                            startVector = section.GetPointAtDist((railLength[s] * i )+
+                                    ((postWidth / Math.Sin(pathVerticalAngle[s])) * numPosts)) - Point3d.Origin;
+
+                            // Position post and add to model and transaction
                             tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
                             numPosts++;
                             modelBlkTblRec.AppendEntity(tempEnt);
@@ -2159,8 +2170,8 @@ namespace ASI_DOTNET
         {
             // Declare variables
             Point3dCollection pts = new Point3dCollection();
-            bool firstPost = true;
-            bool lastPost = true;
+            bool? firstPost = null;
+            bool? lastPost = null;
 
             // Get the current document and database, and start a transaction
             Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -2217,8 +2228,8 @@ namespace ASI_DOTNET
             Rail rail = new Rail(db, pts);
 
             // Deal with first and last post input
-            rail.firstPost[0] = firstPost;
-            rail.lastPost[rail.lastPost.Count - 1] = lastPost;
+            if (firstPost.HasValue) rail.firstPost[0] = (bool)firstPost;
+            if (lastPost.HasValue) rail.lastPost[rail.lastPost.Count - 1] = (bool)lastPost;
 
             // Build rail
             rail.Build();
@@ -2232,59 +2243,95 @@ namespace ASI_DOTNET
         public Database db { get; private set; }
         public double height { get; private set; }
         public double width { get; private set; }
-        public double defaultStairHeight { get; set; }
-        public int numStairs { get; private set; }
         public double stairHeight { get; private set; }
         public double stairDepth { get; set; }
         public double length { get; private set; }
         public double stringerWidth { get; set; }
         public double stringerDepth { get; set; }
         public double treadHeight { get; set; }
+        public double treadOverlap { get; set; }
+
+        // Vector in stair "right" direction (looking up stairs)
         public Vector3d widthVector { get; set; }
         public string layerName { get; set; }
 
         // Other properties
-        private Point3d basePoint;
-        private Point3d topPoint;
-        private Vector3d lengthVector;
+        private int _nStairs;
+        private double _defaultRiserHeight;
+        private Point3d _basePoint;
+        private Point3d _topPoint;
+        private Vector3d _lengthVector;
+
+        public int numStairs
+        {
+            get { return _nStairs; }
+            set 
+            {
+                this._nStairs = value;
+
+                // Calculate stair height
+                this.stairHeight = height / value;
+
+                // Calculate stair length
+                this.length = (value - 1) * stairDepth;
+            }
+        }
+
+        public double riserHeight
+        {
+            get { return _defaultRiserHeight; }
+            set
+            {
+                this._defaultRiserHeight = value;
+
+                // Calculate number of stairs
+                this.numStairs = Convert.ToInt32(
+                    Math.Max(1, Math.Round(height / value))
+                    );
+            }
+        }
 
         public Point3d stairTopPoint
         {
-            get { return topPoint; }
+            get { return _topPoint; }
             set
             {
-                this.topPoint = value;
-                this.basePoint = topPoint.Add(new Vector3d(
-                    (length * lengthVector.UnitVector().X),
-                    (length * lengthVector.UnitVector().Y),
+                this._topPoint = value;
+                this._basePoint = _topPoint.Add(new Vector3d(
+                    (length * stairLengthVector.X),
+                    (length * stairLengthVector.Y),
                     -height));
             }
         }
 
         public Point3d stairBasePoint
         {
-            get { return basePoint; }
+            get { return _basePoint; }
             set
             {
-                this.basePoint = value;
-                this.topPoint = basePoint.Add(new Vector3d(
-                    (length * -lengthVector.UnitVector().X),
-                    (length * -lengthVector.UnitVector().Y),
+                this._basePoint = value;
+                this._topPoint = _basePoint.Add(new Vector3d(
+                    (length * -stairLengthVector.X),
+                    (length * -stairLengthVector.Y),
                     height));
             }
         }
 
+        // Vector in stair "down" direction
         public Vector3d stairLengthVector
         {
-            get { return lengthVector; }
+            get { return _lengthVector; }
             set
             {
-                this.lengthVector = value;
-                this.basePoint = topPoint.Add(new Vector3d(
-                    (length * lengthVector.UnitVector().X),
-                    (length * lengthVector.UnitVector().Y),
+                this._lengthVector = value.UnitVector();
+                this._basePoint = _topPoint.Add(new Vector3d(
+                    (length * stairLengthVector.X),
+                    (length * stairLengthVector.Y),
                     -height));
-                this.widthVector = lengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis);
+                this.widthVector = new Vector3d(
+                    Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).X, 0),
+                    Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).Y, 0),
+                    Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).Z, 0));
             }
         }
 
@@ -2299,28 +2346,21 @@ namespace ASI_DOTNET
             this.width = width;
 
             // Set some defaults
-            this.defaultStairHeight = 7;
             this.stairDepth = 11;
+            this.riserHeight = 7;
             this.stringerWidth = 1.5;
             this.stringerDepth = 12;
             this.treadHeight = 1;
-            this.basePoint = Point3d.Origin;
-            this.lengthVector = -Vector3d.XAxis;
+            this.treadOverlap = 0;
+            this._lengthVector = -Vector3d.XAxis;
+            this.stairBasePoint = Point3d.Origin;
             this.widthVector = -Vector3d.YAxis;
-
-            // Calculate number of stairs
-            this.numStairs = Convert.ToInt32(Math.Max(1, Math.Round(height / defaultStairHeight)));
-
-            // Calculate stair height
-            this.stairHeight = height / numStairs;
-
-            // Calculate stair length
-            this.length = (numStairs - 1) * stairDepth;
 
             // Create beam layer (if necessary)
             this.layerName = "3D-Mezz-Egress";
             layerColor = Utils.ChooseColor("teal");
             Utils.CreateLayer(db, layerName, layerColor);
+
         }
 
         public void Build()
@@ -2342,25 +2382,25 @@ namespace ASI_DOTNET
                     OpenMode.ForWrite) as BlockTableRecord;
 
                 // Create stringer
-                stringer = CreateStringer(numStairs, height, length, stairHeight,
-                    stairDepth, stringerWidth, stringerDepth, lengthVector, widthVector);
+                stringer = CreateStringer(height, length, stairHeight,
+                    stairDepth, stringerWidth, stringerDepth, stairLengthVector, widthVector);
                 stringer.Layer = layerName;
 
                 // Create stair tread
                 tread = CreateTread(width, stringerWidth, stairDepth, treadHeight,
-                    lengthVector, widthVector);
+                    stairLengthVector, widthVector);
                 tread.Layer = layerName;
 
                 // Add first stringer to model and transaction
-                locationVector = basePoint - Point3d.Origin;
+                locationVector = stairBasePoint - Point3d.Origin;
                 tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector));
                 modelBlkTblRec.AppendEntity(tempEnt);
                 acTrans.AddNewlyCreatedDBObject(tempEnt, true);
 
                 // Add second stringer to model and transaction
                 tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
-                    new Vector3d(((width - stringerWidth) * widthVector.UnitVector().X),
-                        ((width - stringerWidth) * widthVector.UnitVector().Y),
+                    new Vector3d(((width - stringerWidth) * widthVector.X),
+                        ((width - stringerWidth) * widthVector.Y),
                         0))));
                 modelBlkTblRec.AppendEntity(tempEnt);
                 acTrans.AddNewlyCreatedDBObject(tempEnt, true);
@@ -2370,10 +2410,10 @@ namespace ASI_DOTNET
                 {
                     tempEnt = tread.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
                         new Vector3d(
-                            (stringerWidth * widthVector.UnitVector().X) +
-                            ((i - 1) * stairDepth * -lengthVector.UnitVector().X),
-                            (stringerWidth * widthVector.UnitVector().Y) +
-                            ((i - 1) * stairDepth * -lengthVector.UnitVector().Y),
+                            (stringerWidth * widthVector.X) +
+                            ((i - 1) * (stairDepth - treadOverlap) * -stairLengthVector.X),
+                            (stringerWidth * widthVector.Y) +
+                            ((i - 1) * (stairDepth - treadOverlap) * -stairLengthVector.Y),
                             i * stairHeight))));
                     modelBlkTblRec.AppendEntity(tempEnt);
                     acTrans.AddNewlyCreatedDBObject(tempEnt, true);
@@ -2386,8 +2426,7 @@ namespace ASI_DOTNET
 
         }
 
-        private static Solid3d CreateStringer(int numStairs,
-            double height,
+        private static Solid3d CreateStringer(double height,
             double length,
             double stairHeight,
             double stairDepth,
@@ -2401,7 +2440,7 @@ namespace ASI_DOTNET
             double vOffset = (stringerDepth - (stairDepth * Math.Sin(stairAngle))) / Math.Cos(stairAngle);
             double hOffset = (stringerDepth - (stairHeight * Math.Cos(stairAngle))) / Math.Sin(stairAngle);
 
-            // Create polyline of stringer profile
+            // Create polyline of stringer profile (laying down in sector 1 of X/Y)
             Polyline stringerPoly = new Polyline();
             stringerPoly.AddVertexAt(0, new Point2d(0, 0), 0, 0, 0);
             stringerPoly.AddVertexAt(1, new Point2d(0, stairHeight), 0, 0, 0);
@@ -2410,21 +2449,23 @@ namespace ASI_DOTNET
             stringerPoly.AddVertexAt(4, new Point2d(hOffset, 0), 0, 0, 0);
             stringerPoly.Closed = true;
 
-            // Create the stringer
+            // Create the stringer (into positive Z)
             Solid3d stringer = Utils.ExtrudePolyline(stringerPoly, stringerWidth);
 
             // Position the stringer vertically
             stringer.TransformBy(Matrix3d.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
 
-            // Position stringer based on width vector
-            if (lengthVector.CrossProduct(widthVector) == -Vector3d.ZAxis)
+            // Position stringer based on width vector (if width vector is not default/right)
+            if ((lengthVector.CrossProduct(widthVector)) == -Vector3d.ZAxis)
             {
                 stringer.TransformBy(Matrix3d.Displacement(new Vector3d(0, stringerWidth, 0)));
             }
 
             // Rotate the stringer
             stringer.TransformBy(Matrix3d.Rotation(
-                Vector3d.XAxis.GetAngleTo(-lengthVector),Vector3d.ZAxis,Point3d.Origin));
+                Vector3d.XAxis.GetAngleTo(-lengthVector, Vector3d.ZAxis),
+                lengthVector.CrossProduct(widthVector),
+                Point3d.Origin));
 
             return stringer;
         }
@@ -2461,7 +2502,7 @@ namespace ASI_DOTNET
 
             // Rotate the tread
             tread.TransformBy(Matrix3d.Rotation(
-                Vector3d.XAxis.GetAngleTo(-lengthVector), Vector3d.ZAxis, Point3d.Origin));
+                Vector3d.XAxis.GetAngleTo(-lengthVector, Vector3d.ZAxis), Vector3d.ZAxis, Point3d.Origin));
 
             return tread;
         }
@@ -2491,6 +2532,7 @@ namespace ASI_DOTNET
             othersOpts.Message = "\nOptions: ";
             othersOpts.Keywords.Add("TopPoint");
             othersOpts.Keywords.Add("BottomPoint");
+            othersOpts.Keywords.Add("RiserHeight");
             othersOpts.AllowArbitraryInput = false;
             othersOpts.AllowNone = true;
 
@@ -2514,6 +2556,15 @@ namespace ASI_DOTNET
             vectorPointOpts.UseBasePoint = true;
             vectorPointOpts.UseDashedLine = true;
 
+            // Prepare prompt for the default riser height
+            PromptDoubleResult riserHeightResult;
+            PromptDistanceOptions riserHeightOpts = new PromptDistanceOptions("");
+            riserHeightOpts.Message = "\nEnter the target riser height: ";
+            riserHeightOpts.DefaultValue = 7;
+            riserHeightOpts.AllowNegative = false;
+            riserHeightOpts.AllowNone = false;
+            riserHeightOpts.AllowZero = false;
+
             // Prompt for stair height
             heightRes = doc.Editor.GetDistance(heightOpts);
             if (heightRes.Status != PromptStatus.OK) return;
@@ -2530,43 +2581,71 @@ namespace ASI_DOTNET
                 width);
 
             // Prompt for other options
-            othersRes = doc.Editor.GetKeywords(othersOpts);
-            if (othersRes.Status == PromptStatus.Cancel) return;
-
-            if (othersRes.Status == PromptStatus.OK)
+            do
             {
-                switch (othersRes.StringResult)
+                othersRes = doc.Editor.GetKeywords(othersOpts);
+                if (othersRes.Status == PromptStatus.Cancel) return;
+                if (othersRes.Status == PromptStatus.OK)
                 {
-                    case "TopPoint":
-                        topPointResult = doc.Editor.GetPoint(topPointOpts);
-                        staircase.stairTopPoint = topPointResult.Value;
-                        vectorPointOpts.BasePoint = topPointResult.Value;
-                        vectorPointResult = doc.Editor.GetPoint(vectorPointOpts);
-                        staircase.stairLengthVector = vectorPointResult.Value - topPointResult.Value;
-                        if (! Utils.VerifyOrthogonalAngle(Utils.PolarAnglePhi(staircase.lengthVector)))
-                        {
-                            Application.ShowAlertDialog("Invalid length vector: must be orthogonal.");
-                            return;
-                        }
-                        break;
-                    case "BottomPoint":
-                        bottomPointResult = doc.Editor.GetPoint(bottomPointOpts);
-                        staircase.stairBasePoint = bottomPointResult.Value;
-                        vectorPointOpts.BasePoint = bottomPointResult.Value;
-                        vectorPointResult = doc.Editor.GetPoint(vectorPointOpts);
-                        staircase.stairLengthVector = bottomPointResult.Value - vectorPointResult.Value;
-                        if (! Utils.VerifyOrthogonalAngle(Utils.PolarAnglePhi(staircase.lengthVector)))
-                        {
-                            Application.ShowAlertDialog("Invalid length vector: must be orthogonal.");
-                            return;
-                        }
-                        break;
-                    default:
-                        Application.ShowAlertDialog("Invalid Keyword");
-                        break;
+                    switch (othersRes.StringResult)
+                    {
+                        case "TopPoint":
+                            topPointResult = doc.Editor.GetPoint(topPointOpts);
+                            staircase.stairTopPoint = topPointResult.Value;
+                            vectorPointOpts.BasePoint = topPointResult.Value;
+                            vectorPointResult = doc.Editor.GetPoint(vectorPointOpts);
+                            staircase.stairLengthVector = vectorPointResult.Value - topPointResult.Value;
+                            if (!Utils.VerifyOrthogonalAngle(Utils.PolarAnglePhi(staircase._lengthVector)))
+                            {
+                                Application.ShowAlertDialog("Invalid length vector: must be orthogonal.");
+                                return;
+                            }
+                            othersOpts = new PromptKeywordOptions("");
+                            othersOpts.Message = "\nOptions: ";
+                            othersOpts.Keywords.Add("RiserHeight");
+                            othersOpts.AllowArbitraryInput = false;
+                            othersOpts.AllowNone = true;
+                            break;
+                        case "BottomPoint":
+                            bottomPointResult = doc.Editor.GetPoint(bottomPointOpts);
+                            staircase.stairBasePoint = bottomPointResult.Value;
+                            vectorPointOpts.BasePoint = bottomPointResult.Value;
+                            vectorPointResult = doc.Editor.GetPoint(vectorPointOpts);
+                            staircase.stairLengthVector = bottomPointResult.Value - vectorPointResult.Value;
+                            if (!Utils.VerifyOrthogonalAngle(Utils.PolarAnglePhi(staircase._lengthVector)))
+                            {
+                                Application.ShowAlertDialog("Invalid length vector: must be orthogonal.");
+                                return;
+                            }
+                            othersOpts = new PromptKeywordOptions("");
+                            othersOpts.Message = "\nOptions: ";
+                            othersOpts.Keywords.Add("RiserHeight");
+                            othersOpts.AllowArbitraryInput = false;
+                            othersOpts.AllowNone = true;
+                            break;
+                        case "RiserHeight":
+                            riserHeightResult = doc.Editor.GetDistance(riserHeightOpts);
+                            if (riserHeightResult.Value < 5)
+                            {
+                                Application.ShowAlertDialog("Invalid riser height: too shallow.");
+                                return;
+                            }
+                            else if (riserHeightResult.Value > 8)
+                            {
+                                Application.ShowAlertDialog("Invalid riser height: too steep.");
+                                return;
+                            }
+                            else
+                            {
+                                staircase.riserHeight = riserHeightResult.Value;
+                            }
+                            break;
+                        default:
+                            Application.ShowAlertDialog("Invalid Keyword");
+                            break;
+                    }
                 }
-
-            }
+            } while (othersRes.Status != PromptStatus.None);
 
             // Build stairs
             staircase.Build();

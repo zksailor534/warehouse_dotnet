@@ -88,7 +88,7 @@ namespace ASI_DOTNET
         private ObjectIdCollection objList = new ObjectIdCollection();
         private string beamOrientation;
         private string spacerOrientation;
-        private string tieOrientation;
+        // private string tieOrientation;
 
         // Public constructor
         public Rack(Database db,
@@ -128,7 +128,7 @@ namespace ASI_DOTNET
             this.tieHeight = frameDiameter;
             this.tieWidth  = frameDiameter;
             this.tieType = "Box";
-            this.tieOrientation = "X-Axis";
+            // this.tieOrientation = "X-Axis";
         }
 
         // Call this function whenever core properties change
