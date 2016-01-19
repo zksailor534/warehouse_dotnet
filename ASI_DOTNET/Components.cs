@@ -2231,7 +2231,6 @@ namespace ASI_DOTNET
         public double height { get; private set; }
         public double width { get; private set; }
         public double stairHeight { get; private set; }
-        public double stairDepth { get; set; }
         public double length { get; private set; }
         public double stringerWidth { get; set; }
         public double stringerDepth { get; set; }
@@ -2244,6 +2243,7 @@ namespace ASI_DOTNET
         // Other properties
         private int _nRisers;
         private double _defaultRiserHeight;
+        private double _stairDepth;
         private double _treadOverlap;
         private Point3d _basePoint;
         private Point3d _topPoint;
@@ -2262,6 +2262,27 @@ namespace ASI_DOTNET
 
                 // Calculate stair length
                 this.length = (value - 1) * stairDepth - ((value - 2) * treadOverlap);
+
+                // Move base point if defining point is top
+                if (_definePoint == "top")
+                {
+                    this._basePoint = _topPoint.Add(new Vector3d(
+                        (length * stairLengthVector.X),
+                        (length * stairLengthVector.Y),
+                        -height));
+                }
+            }
+        }
+
+        public double stairDepth
+        {
+            get { return _stairDepth; }
+            set
+            {
+                this._stairDepth = value;
+
+                // Calculate stair length
+                this.length = (numRisers - 1) * value - ((numRisers - 2) * treadOverlap);
 
                 // Move base point if defining point is top
                 if (_definePoint == "top")
@@ -2647,7 +2668,8 @@ namespace ASI_DOTNET
                             othersOpts = new PromptKeywordOptions("");
                             othersOpts.Message = "\nOptions: ";
                             othersOpts.Keywords.Add("RiserHeight");
-                            othersOpts.Keywords.Add("TreadOverlap");
+                            othersOpts.Keywords.Add("TreadDepth");
+                            othersOpts.Keywords.Add("Overlap");
                             othersOpts.AllowArbitraryInput = false;
                             othersOpts.AllowNone = true;
                             break;
@@ -2665,7 +2687,8 @@ namespace ASI_DOTNET
                             othersOpts = new PromptKeywordOptions("");
                             othersOpts.Message = "\nOptions: ";
                             othersOpts.Keywords.Add("RiserHeight");
-                            othersOpts.Keywords.Add("TreadOverlap");
+                            othersOpts.Keywords.Add("TreadDepth");
+                            othersOpts.Keywords.Add("Overlap");
                             othersOpts.AllowArbitraryInput = false;
                             othersOpts.AllowNone = true;
                             break;
