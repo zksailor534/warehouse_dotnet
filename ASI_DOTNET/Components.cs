@@ -1947,7 +1947,7 @@ namespace ASI_DOTNET
       this.pathVerticalAngle = Utils.PolarAngleTheta(pathSection);
 
       // Kickplate defaults (only in flat sections)
-      if (Math.Round(pathVerticalAngle, 1) == 0) this.kickPlate = true;
+      if (Math.Round(Utils.ToDegrees(pathVerticalAngle), 0) == 0) this.kickPlate = true;
       else this.kickPlate = false;
 
     }
@@ -1996,7 +1996,7 @@ namespace ASI_DOTNET
       // Declare variables
       Solid3d post;
       Solid3d rail;
-      Solid3d kickplate;
+      Solid3d kickplateSolid;
       Vector3d startVector;
       Entity tempEnt;
       double numPosts = 0;
@@ -2024,22 +2024,18 @@ namespace ASI_DOTNET
       rail.Layer = layerName;
 
       // Create kickplate
-      kickplate = CreateKickplate(railLength, kickplateHeight, kickplateWidth, pathVerticalAngle,
+      kickplateSolid = CreateKickplate(railLength, kickplateHeight, kickplateWidth, pathVerticalAngle,
         pathOrientation, postOrientation);
-      kickplate.Layer = layerName;
+      kickplateSolid.Layer = layerName;
 
       // Position first post (if necessary) and add to model and transaction
       startVector = pathSection.StartPoint - Point3d.Origin;
+      numPosts++;
       if (firstPost)
       {
         tempEnt = post.GetTransformedCopy(Matrix3d.Displacement(startVector));
-        numPosts++;
         blkTblRec.AppendEntity(tempEnt);
         acTrans.AddNewlyCreatedDBObject(tempEnt, true);
-      }
-      else
-      {
-        numPosts++;
       }
 
       // Loop over other rail sections
@@ -2057,11 +2053,14 @@ namespace ASI_DOTNET
         }
 
         // Postition kickplate and add to model and transaction
-        tempEnt = kickplate.GetTransformedCopy(Matrix3d.Displacement(
+        if (kickPlate)
+        {
+          tempEnt = kickplateSolid.GetTransformedCopy(Matrix3d.Displacement(
           startVector.Add(KickplateLocation(postWidth, kickplateHeight,
           pathVerticalAngle, pathOrientation))));
-        blkTblRec.AppendEntity(tempEnt);
-        acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+          blkTblRec.AppendEntity(tempEnt);
+          acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+        }
 
         // Account for lastPost
         if (i == sectionRails && !lastPost) continue;
