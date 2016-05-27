@@ -16,7 +16,8 @@ This includes:
   
 ### To use:
 
-Load into AutoCAD using *netload* command.
+Compile using Visual Studio or other C# compiler
+Load compiled .dll file into AutoCAD using *netload* command.
 Provides the following commands:
 * *ColumnPrompt*
 * *TrussPrompt*
