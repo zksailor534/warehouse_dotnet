@@ -2222,103 +2222,46 @@ namespace ASI_DOTNET
     public Database db { get; private set; }
     public double height { get; private set; }
     public double width { get; private set; }
-    public double stairHeight { get; private set; }
-    public double length { get; private set; }
+    public double idealRise { get; set; }
+    public double idealRun { get; set; }
+    public double treadOverlap { get; set; }
+    public int numRisers { get; private set; }
+    public double rise { get; private set; }
+    public double run { get; private set; }
+    public double totalRise { get; private set; }
+    public double totalRun { get; private set; }
     public double stringerWidth { get; set; }
     public double stringerDepth { get; set; }
     public double treadHeight { get; set; }
+    public bool treadTop { get; set; }
 
     // Vector in stair "right" direction (looking up stairs)
     public Vector3d widthVector { get; set; }
     public string layerName { get; set; }
 
     // Other properties
-    private int _nRisers;
-    private double _defaultRiserHeight;
-    private double _stairDepth;
-    private double _treadOverlap;
+    private double? _stairAngle = null;
     private Point3d _basePoint;
     private Point3d _topPoint;
-    private string _definePoint;
+    private bool _defineTopPoint;
     private Vector3d _lengthVector;
 
-    public int numRisers
+    public double? stairAngle
     {
-      get { return _nRisers; }
-      set
+      get
       {
-        this._nRisers = value;
-
-        // Calculate stair height
-        this.stairHeight = height / value;
-
-        // Calculate stair length
-        this.length = (value - 1) * stairDepth - ((value - 2) * treadOverlap);
-
-        // Move base point if defining point is top
-        if (_definePoint == "top")
+        if (_stairAngle.HasValue)
         {
-          this._basePoint = _topPoint.Add(new Vector3d(
-              (length * stairLengthVector.X),
-              (length * stairLengthVector.Y),
-              -height));
+          return Utils.ToDegrees((double)_stairAngle);
+        }
+        else
+        {
+          return null;
         }
       }
-    }
-
-    public double stairDepth
-    {
-      get { return _stairDepth; }
       set
       {
-        this._stairDepth = value;
-
-        // Calculate stair length
-        this.length = (numRisers - 1) * value - ((numRisers - 2) * treadOverlap);
-
-        // Move base point if defining point is top
-        if (_definePoint == "top")
-        {
-          this._basePoint = _topPoint.Add(new Vector3d(
-              (length * stairLengthVector.X),
-              (length * stairLengthVector.Y),
-              -height));
-        }
-      }
-    }
-
-    public double defaultRiserHeight
-    {
-      get { return _defaultRiserHeight; }
-      set
-      {
-        this._defaultRiserHeight = value;
-
-        // Calculate number of stairs
-        this.numRisers = Convert.ToInt32(
-            Math.Max(1, Math.Round(height / value))
-            );
-      }
-    }
-
-    public double treadOverlap
-    {
-      get { return _treadOverlap; }
-      set
-      {
-        this._treadOverlap = value;
-
-        // Calculate stair length
-        this.length = (numRisers - 1) * stairDepth - ((numRisers - 2) * value);
-
-        // Move base point if defining point is top
-        if (_definePoint == "top")
-        {
-          this._basePoint = _topPoint.Add(new Vector3d(
-              (length * stairLengthVector.X),
-              (length * stairLengthVector.Y),
-              -height));
-        }
+        this._stairAngle = Utils.ToRadians((double)value);
       }
     }
 
@@ -2328,11 +2271,7 @@ namespace ASI_DOTNET
       set
       {
         this._topPoint = value;
-        this._definePoint = "top";
-        this._basePoint = _topPoint.Add(new Vector3d(
-            (length * stairLengthVector.X),
-            (length * stairLengthVector.Y),
-            -height));
+        this._defineTopPoint = true;
       }
     }
 
@@ -2342,11 +2281,7 @@ namespace ASI_DOTNET
       set
       {
         this._basePoint = value;
-        this._definePoint = "base";
-        this._topPoint = _basePoint.Add(new Vector3d(
-            (length * -stairLengthVector.X),
-            (length * -stairLengthVector.Y),
-            height));
+        this._defineTopPoint = false;
       }
     }
 
@@ -2357,14 +2292,6 @@ namespace ASI_DOTNET
       set
       {
         this._lengthVector = value.UnitVector();
-        this._basePoint = _topPoint.Add(new Vector3d(
-            (length * stairLengthVector.X),
-            (length * stairLengthVector.Y),
-            -height));
-        this.widthVector = new Vector3d(
-            Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).X, 0),
-            Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).Y, 0),
-            Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).Z, 0));
       }
     }
 
@@ -2379,13 +2306,14 @@ namespace ASI_DOTNET
       this.width = width;
 
       // Set some defaults
-      this.stairDepth = 11;
-      this.defaultRiserHeight = 7;
+      this.idealRun = 11;
+      this.idealRise = 7;
       this.stringerWidth = 1.5;
       this.stringerDepth = 12;
       this.treadHeight = 1;
       this.treadOverlap = 0;
-      this._lengthVector = -Vector3d.XAxis;
+      this._defineTopPoint = false;
+      this.stairLengthVector = -Vector3d.XAxis;
       this.stairBasePoint = Point3d.Origin;
       this.widthVector = -Vector3d.YAxis;
 
@@ -2393,6 +2321,57 @@ namespace ASI_DOTNET
       this.layerName = "3D-Mezz-Egress";
       layerColor = Utils.ChooseColor("teal");
       Utils.CreateLayer(db, layerName, layerColor);
+
+    }
+
+    public void Calculation()
+    {
+
+      /// TBD: add test here for top tread height-based calculation
+      // Calculate number of risers based on ideal rise
+      this.numRisers = Convert.ToInt32(Math.Max(1, Math.Round(height / idealRise)));
+
+      // Calculate final stair riser
+      this.rise = height / numRisers;
+
+      if (stairAngle.HasValue)
+      {
+        // Set stair tread run based off stair angle
+        this.run = ((height / Math.Tan((double)_stairAngle)) + ((numRisers - 2) * treadOverlap)) / numRisers;
+
+        // Perform length calculations based off stair angle
+        this.totalRun = run * (numRisers - 1) - ((numRisers - 2) * treadOverlap);
+      }
+      else
+      {
+        // Set stair tread run (horizontal distance) as ideal
+        this.run = idealRun;
+
+        // Calculate stair length
+        this.totalRun = (numRisers - 1) * run - ((numRisers - 2) * treadOverlap);
+      }
+
+      // Move base point if defining point is top
+      if (_defineTopPoint)
+      {
+        this._basePoint = _topPoint.Add(new Vector3d(
+          (totalRun * stairLengthVector.X),
+          (totalRun * stairLengthVector.Y),
+          -height));
+      }
+      else
+      {
+        this._topPoint = _basePoint.Add(new Vector3d(
+          (totalRun * -stairLengthVector.X),
+          (totalRun * -stairLengthVector.Y),
+          height));
+      }
+
+      // Set width vector based on length vector
+      this.widthVector = new Vector3d(
+        Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).X, 0),
+        Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).Y, 0),
+        Math.Round(stairLengthVector.RotateBy(Math.PI / 2, Vector3d.ZAxis).Z, 0));
 
     }
 
@@ -2415,12 +2394,12 @@ namespace ASI_DOTNET
           OpenMode.ForWrite) as BlockTableRecord;
 
         // Create stringer
-        stringer = CreateStringer(height, length, stairHeight,
-          stairDepth, stringerWidth, stringerDepth, stairLengthVector, widthVector);
+        stringer = CreateStringer(height, totalRun, rise,
+          run, stringerWidth, stringerDepth, stairLengthVector, widthVector);
         stringer.Layer = layerName;
 
         // Create stair tread
-        tread = CreateTread(width, stringerWidth, stairDepth, treadHeight,
+        tread = CreateTread(width, stringerWidth, run, treadHeight,
           stairLengthVector, widthVector);
         tread.Layer = layerName;
 
@@ -2444,14 +2423,14 @@ namespace ASI_DOTNET
           tempEnt = tread.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
             new Vector3d(
               (stringerWidth * widthVector.X) +
-              ((i - 1) * (stairDepth - treadOverlap) * -stairLengthVector.X) +
-              ((stairLengthVector.CrossProduct(widthVector).X) * (i * stairHeight)),
+              ((i - 1) * (run - treadOverlap) * -stairLengthVector.X) +
+              ((stairLengthVector.CrossProduct(widthVector).X) * (i * rise)),
               (stringerWidth * widthVector.Y) +
-              ((i - 1) * (stairDepth - treadOverlap) * -stairLengthVector.Y) +
-              ((stairLengthVector.CrossProduct(widthVector).X) * (i * stairHeight)),
+              ((i - 1) * (run - treadOverlap) * -stairLengthVector.Y) +
+              ((stairLengthVector.CrossProduct(widthVector).X) * (i * rise)),
               (stringerWidth * widthVector.Z) +
-              ((i - 1) * (stairDepth - treadOverlap) * -stairLengthVector.Z) +
-              ((stairLengthVector.CrossProduct(widthVector).Z) * (i * stairHeight))))));
+              ((i - 1) * (run - treadOverlap) * -stairLengthVector.Z) +
+              ((stairLengthVector.CrossProduct(widthVector).Z) * (i * rise))))));
           modelBlkTblRec.AppendEntity(tempEnt);
           acTrans.AddNewlyCreatedDBObject(tempEnt, true);
         }
@@ -2567,6 +2546,7 @@ namespace ASI_DOTNET
       PromptResult othersRes;
       PromptKeywordOptions othersOpts = new PromptKeywordOptions("");
       othersOpts.Message = "\nOptions: ";
+      othersOpts.Keywords.Add("Angle");
       othersOpts.Keywords.Add("TopPoint");
       othersOpts.Keywords.Add("BottomPoint");
       othersOpts.Keywords.Add("TreadDepth");
@@ -2574,6 +2554,15 @@ namespace ASI_DOTNET
       othersOpts.Keywords.Add("Overlap");
       othersOpts.AllowArbitraryInput = false;
       othersOpts.AllowNone = true;
+
+      // Prepare prompt for the stair angle
+      PromptDoubleResult stairAngleResult;
+      PromptDoubleOptions stairAngleOpts = new PromptDoubleOptions("");
+      stairAngleOpts.Message = "\nEnter the stair angle: ";
+      stairAngleOpts.DefaultValue = 35;
+      stairAngleOpts.AllowNegative = false;
+      stairAngleOpts.AllowNone = false;
+      stairAngleOpts.AllowZero = false;
 
       // Prepare prompt for top point
       PromptPointResult topPointResult;
@@ -2646,6 +2635,18 @@ namespace ASI_DOTNET
         {
           switch (othersRes.StringResult)
           {
+            case "Angle":
+              stairAngleResult = doc.Editor.GetDouble(stairAngleOpts);
+              if (stairAngleResult.Value > 45)
+              {
+                Application.ShowAlertDialog("Invalid stair angle: too steep.");
+                return;
+              }
+              else
+              {
+                staircase.stairAngle = stairAngleResult.Value;
+              }
+              break;
             case "TopPoint":
               topPointResult = doc.Editor.GetPoint(topPointOpts);
               staircase.stairTopPoint = topPointResult.Value;
@@ -2659,6 +2660,7 @@ namespace ASI_DOTNET
               }
               othersOpts = new PromptKeywordOptions("");
               othersOpts.Message = "\nOptions: ";
+              othersOpts.Keywords.Add("Angle");
               othersOpts.Keywords.Add("RiserHeight");
               othersOpts.Keywords.Add("TreadDepth");
               othersOpts.Keywords.Add("Overlap");
@@ -2678,6 +2680,7 @@ namespace ASI_DOTNET
               }
               othersOpts = new PromptKeywordOptions("");
               othersOpts.Message = "\nOptions: ";
+              othersOpts.Keywords.Add("Angle");
               othersOpts.Keywords.Add("RiserHeight");
               othersOpts.Keywords.Add("TreadDepth");
               othersOpts.Keywords.Add("Overlap");
@@ -2698,7 +2701,7 @@ namespace ASI_DOTNET
               }
               else
               {
-                staircase.stairDepth = treadDepthResult.Value;
+                staircase.idealRun = treadDepthResult.Value;
               }
               break;
             case "RiserHeight":
@@ -2715,12 +2718,12 @@ namespace ASI_DOTNET
               }
               else
               {
-                staircase.defaultRiserHeight = riserHeightResult.Value;
+                staircase.idealRise = riserHeightResult.Value;
               }
               break;
             case "Overlap":
               treadOverlapResult = doc.Editor.GetDistance(treadOverlapOpts);
-              if (treadOverlapResult.Value > staircase.stairDepth)
+              if (treadOverlapResult.Value > staircase.idealRun)
               {
                 Application.ShowAlertDialog("Invalid overlap: too large.");
                 return;
@@ -2736,6 +2739,9 @@ namespace ASI_DOTNET
           }
         }
       } while (othersRes.Status != PromptStatus.None);
+
+      // Calculate stairs
+      staircase.Calculation();
 
       // Build stairs
       staircase.Build();
@@ -3247,6 +3253,5 @@ namespace ASI_DOTNET
     }
 
   }
-
 
 }
