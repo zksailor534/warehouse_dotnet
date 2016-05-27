@@ -14,7 +14,9 @@ namespace ASI_DOTNET
 {
   public static class Utils
   {
-    public static void SetBlockObjectProperties(Entity ent)
+    public static void SetObjectProperties(Entity ent,
+      string color = "ByBlock",
+      string linetype = "ByBlock")
     {
       // Set layer and properties
       ent.Layer = "0";

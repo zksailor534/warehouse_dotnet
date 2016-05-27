@@ -76,7 +76,7 @@ namespace ASI_DOTNET
         layerColor = Utils.ChooseColor("teal");
       }
 
-      // Create beam layer (if necessary)
+      // Create column layer (if necessary)
       Utils.CreateLayer(db, layerName, layerColor);
     }
 
@@ -119,7 +119,7 @@ namespace ASI_DOTNET
               bPlate.TransformBy(Matrix3d.Displacement(bVec));
 
               // Set block object properties
-              Utils.SetBlockObjectProperties(bPlate);
+              Utils.SetObjectProperties(bPlate);
 
               // Add baseplate to block
               acBlkTblRec.AppendEntity(bPlate);
@@ -134,7 +134,7 @@ namespace ASI_DOTNET
             column.TransformBy(Matrix3d.Displacement(cVec));
 
             // Set block object properties
-            Utils.SetBlockObjectProperties(column);
+            Utils.SetObjectProperties(column);
 
             // Add column to block
             acBlkTblRec.AppendEntity(column);
@@ -541,7 +541,7 @@ namespace ASI_DOTNET
       }
 
       // Set block object properties
-      Utils.SetBlockObjectProperties(chord);
+      Utils.SetObjectProperties(chord);
 
       return chord;
     }
@@ -720,7 +720,7 @@ namespace ASI_DOTNET
       }
 
       // Set block object properties
-      Utils.SetBlockObjectProperties(rod);
+      Utils.SetObjectProperties(rod);
 
       return rod;
     }
@@ -1178,7 +1178,7 @@ namespace ASI_DOTNET
       Post.TransformBy(Matrix3d.Displacement(pVec));
 
       // Set block object properties
-      Utils.SetBlockObjectProperties(Post);
+      Utils.SetObjectProperties(Post);
 
       return Post;
     }
@@ -1240,7 +1240,7 @@ namespace ASI_DOTNET
         brace.TransformBy(Matrix3d.Displacement(bVec));
 
         // Set block object properties
-        Utils.SetBlockObjectProperties(brace);
+        Utils.SetObjectProperties(brace);
 
         btr.AppendEntity(brace);
       }
@@ -1290,7 +1290,7 @@ namespace ASI_DOTNET
         aBrace.TransformBy(Matrix3d.Displacement(aVec));
 
         // Set block object properties
-        Utils.SetBlockObjectProperties(aBrace);
+        Utils.SetObjectProperties(aBrace);
 
         // Add brace to block
         btr.AppendEntity(aBrace);
@@ -1419,7 +1419,7 @@ namespace ASI_DOTNET
             Solid3d beamSolid = Utils.SweepPolylineOverLine(beamPoly, beamLine);
 
             // Set block properties
-            Utils.SetBlockObjectProperties(beamSolid);
+            Utils.SetObjectProperties(beamSolid);
 
             // Add entity to Block Table Record
             acBlkTblRec.AppendEntity(beamSolid);
@@ -2234,6 +2234,8 @@ namespace ASI_DOTNET
     public double stringerDepth { get; set; }
     public double treadHeight { get; set; }
     public bool treadTop { get; set; }
+    public string name { get; private set; }
+    public ObjectId id { get; private set; }
 
     // Vector in stair "right" direction (looking up stairs)
     public Vector3d widthVector { get; set; }
@@ -2318,10 +2320,13 @@ namespace ASI_DOTNET
       this.stairBasePoint = Point3d.Origin;
       this.widthVector = -Vector3d.YAxis;
 
-      // Create beam layer (if necessary)
+      // Create stair layer (if necessary)
       this.layerName = "3D-Mezz-Egress";
       layerColor = Utils.ChooseColor("teal");
       Utils.CreateLayer(db, layerName, layerColor);
+
+      // Create name for block
+      this.name = "Stair - " + height + "x" + width;
 
     }
 
@@ -2338,6 +2343,9 @@ namespace ASI_DOTNET
 
         // Set total rise height of stairs
         this.totalRise = numRisers * rise;
+
+        // Edit name for block
+        this.name = "Stair (TopTread) - " + height + "x" + width;
       }
       else
       {
@@ -2409,53 +2417,86 @@ namespace ASI_DOTNET
         BlockTable acBlkTbl;
         acBlkTbl = acTrans.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
 
-        // Open the Block table record Model space for write
-        BlockTableRecord modelBlkTblRec = acTrans.GetObject(acBlkTbl[BlockTableRecord.ModelSpace],
-          OpenMode.ForWrite) as BlockTableRecord;
-
-        // Create stringer
-        stringer = CreateStringer(totalRise, totalRun, rise,
-          run, stringerWidth, stringerDepth, stairLengthVector, widthVector);
-        stringer.Layer = layerName;
-
-        // Create stair tread
-        tread = CreateTread(width, stringerWidth, run, treadHeight,
-          stairLengthVector, widthVector);
-        tread.Layer = layerName;
-
-        // Add first stringer to model and transaction
-        locationVector = stairBasePoint - Point3d.Origin;
-        tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector));
-        modelBlkTblRec.AppendEntity(tempEnt);
-        acTrans.AddNewlyCreatedDBObject(tempEnt, true);
-
-        // Add second stringer to model and transaction
-        tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
-          new Vector3d(((width - stringerWidth) * widthVector.X),
-            ((width - stringerWidth) * widthVector.Y),
-            0))));
-        modelBlkTblRec.AppendEntity(tempEnt);
-        acTrans.AddNewlyCreatedDBObject(tempEnt, true);
-
-        // Loop over stair treads
-        for (int i = 1; i < numRisers; i++)
+        if (acBlkTbl.Has(name))
         {
-          tempEnt = tread.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
-            new Vector3d(
-              (stringerWidth * widthVector.X) +
-              ((i - 1) * (run - treadOverlap) * -stairLengthVector.X) +
-              ((stairLengthVector.CrossProduct(widthVector).X) * (i * rise)),
-              (stringerWidth * widthVector.Y) +
-              ((i - 1) * (run - treadOverlap) * -stairLengthVector.Y) +
-              ((stairLengthVector.CrossProduct(widthVector).X) * (i * rise)),
-              (stringerWidth * widthVector.Z) +
-              ((i - 1) * (run - treadOverlap) * -stairLengthVector.Z) +
-              ((stairLengthVector.CrossProduct(widthVector).Z) * (i * rise))))));
-          modelBlkTblRec.AppendEntity(tempEnt);
-          acTrans.AddNewlyCreatedDBObject(tempEnt, true);
+          // Retrieve object id
+          this.id = acBlkTbl[name];
+        }
+        else
+        {
+          // Create new block (record)
+          using (BlockTableRecord acBlkTblRec = new BlockTableRecord())
+          {
+            acBlkTblRec.Name = name;
+
+            // Set the insertion point for the block
+            acBlkTblRec.Origin = new Point3d(0, 0, 0);
+
+            // Create stringer
+            stringer = CreateStringer(totalRise, totalRun, rise,
+              run, stringerWidth, stringerDepth, stairLengthVector, widthVector);
+
+            // Create stair tread
+            tread = CreateTread(width, stringerWidth, run, treadHeight,
+              stairLengthVector, widthVector);
+
+            // Add first stringer to model and transaction
+            locationVector = stairBasePoint - Point3d.Origin;
+            tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector));
+
+            // Set block object properties
+            Utils.SetObjectProperties(tempEnt);
+
+            // Add object to block
+            acBlkTblRec.AppendEntity(tempEnt);
+
+            // Add second stringer to model and transaction
+            tempEnt = stringer.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
+              new Vector3d(((width - stringerWidth) * widthVector.X),
+                ((width - stringerWidth) * widthVector.Y),
+                0))));
+
+            // Set block object properties
+            Utils.SetObjectProperties(tempEnt);
+
+            // Add object to block
+            acBlkTblRec.AppendEntity(tempEnt);
+
+            // Loop over stair treads
+            for (int i = 1; i < numRisers; i++)
+            {
+              tempEnt = tread.GetTransformedCopy(Matrix3d.Displacement(locationVector.Add(
+                new Vector3d(
+                  (stringerWidth * widthVector.X) +
+                  ((i - 1) * (run - treadOverlap) * -stairLengthVector.X) +
+                  ((stairLengthVector.CrossProduct(widthVector).X) * (i * rise)),
+                  (stringerWidth * widthVector.Y) +
+                  ((i - 1) * (run - treadOverlap) * -stairLengthVector.Y) +
+                  ((stairLengthVector.CrossProduct(widthVector).X) * (i * rise)),
+                  (stringerWidth * widthVector.Z) +
+                  ((i - 1) * (run - treadOverlap) * -stairLengthVector.Z) +
+                  ((stairLengthVector.CrossProduct(widthVector).Z) * (i * rise))))));
+
+              // Set block object properties
+              Utils.SetObjectProperties(tempEnt);
+
+              // Add object to block
+              acBlkTblRec.AppendEntity(tempEnt);
+            }
+
+            // Add Block to Block Table and close Transaction
+            acBlkTbl.UpgradeOpen();
+            acBlkTbl.Add(acBlkTblRec);
+            acTrans.AddNewlyCreatedDBObject(acBlkTblRec, true);
+
+          }
+
+          // Set block id property
+          this.id = acBlkTbl[name];
+
         }
 
-        // Save the transaction
+        // Save the new object to the database
         acTrans.Commit();
 
       }
