@@ -1654,7 +1654,7 @@ namespace ASI_DOTNET
     // Auto-impl class properties
     public Database db { get; private set; }
     public Point3dCollection points { get; private set; }
-    public double height { get; private set; }
+    public double height { get; set; }
     public int numSections { get; private set; }
     public int tiers { get; set; }
     public double[] tierHeight { get; set; }
@@ -1683,6 +1683,7 @@ namespace ASI_DOTNET
       // Set some defaults
       // postOrientation = 1 --> left of section line
       // postOrientation = -1 --> right of section line
+      this.height = 42;
       this.postOrientation = 1;
       this.postWidth = 1.5;
       this.kickPlate = true;
@@ -1787,6 +1788,9 @@ namespace ASI_DOTNET
             postOrientation,
             layerName);
 
+          // Rail height option
+          section.height = height;
+
           // First and last post options
           if (!firstPost[s]) section.firstPost = false;
           if (!lastPost[s]) section.lastPost = false;
@@ -1812,6 +1816,7 @@ namespace ASI_DOTNET
       Point3dCollection pts = new Point3dCollection();
       bool? kickPlate = null;
       double? orientation = null;
+      double? railHeight = null;
 
       // Get the current document and database, and start a transaction
       Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -1820,8 +1825,8 @@ namespace ASI_DOTNET
       // Prepare prompt for points
       PromptPointResult ptRes;
       PromptPointOptions ptOpts = new PromptPointOptions("");
-      ptOpts.SetMessageAndKeywords("\nEnter point or [Kickplate/PostOrientation]",
-          "Kickplate PostOrientation");
+      ptOpts.SetMessageAndKeywords("\nEnter point or [Height/Kickplate/PostOrientation]",
+          "Height Kickplate PostOrientation");
       ptOpts.AllowNone = true;
 
       // Prepare prompt for kickplates
@@ -1833,7 +1838,7 @@ namespace ASI_DOTNET
       kickplateOpts.Keywords.Default = "True";
       kickplateOpts.AllowArbitraryInput = false;
 
-      // Prepare prompt for kickplates
+      // Prepare prompt for post orientation
       PromptResult orientRes;
       PromptKeywordOptions orientOpts = new PromptKeywordOptions("");
       orientOpts.Message = "\nPost on which side? ";
@@ -1842,6 +1847,15 @@ namespace ASI_DOTNET
       orientOpts.Keywords.Default = "Left";
       orientOpts.AllowArbitraryInput = false;
 
+      // Prepare prompt for rail height
+      PromptDoubleResult heightResult;
+      PromptDoubleOptions heightOpts = new PromptDoubleOptions("");
+      heightOpts.Message = "\nEnter the rail height: ";
+      heightOpts.DefaultValue = 42;
+      heightOpts.AllowNegative = false;
+      heightOpts.AllowNone = false;
+      heightOpts.AllowZero = false;
+
       do
       {
         ptRes = doc.Editor.GetPoint(ptOpts);
@@ -1849,6 +1863,25 @@ namespace ASI_DOTNET
         if (ptRes.Status == PromptStatus.Keyword)
           switch (ptRes.StringResult)
           {
+            case "Height":
+              heightResult = doc.Editor.GetDouble(heightOpts);
+              if (heightResult.Value > 60)
+              {
+                Application.ShowAlertDialog("Invalid rail height: too high." +
+                  "\nCannot be greater than 60 inches");
+                return;
+              }
+              else if (heightResult.Value < 36)
+              {
+                Application.ShowAlertDialog("Invalid rail height: too low." +
+                  "\nCannot be less than 36 inches");
+                return;
+              }
+              else
+              {
+                railHeight = heightResult.Value;
+              }
+              break;
             case "KickPlate":
               kickplateRes = doc.Editor.GetKeywords(kickplateOpts);
               if (kickplateRes.Status != PromptStatus.OK) return;
@@ -1877,6 +1910,9 @@ namespace ASI_DOTNET
       // Initialize rail system
       Rail rail = new Rail(db, pts);
 
+      // Deal with rail height input
+      if (railHeight.HasValue) rail.height = (double)railHeight;
+
       // Deal with kickplate input
       if (kickPlate.HasValue) rail.kickPlate = (bool)kickPlate;
 
@@ -1895,7 +1931,7 @@ namespace ASI_DOTNET
     public BlockTableRecord blkTblRec { get; private set; }
     public Transaction acTrans { get; private set; }
     public Line pathSection { get; private set; }
-    public double height { get; private set; }
+    public double height { get; set; }
     public int tiers { get; set; }
     public double[] tierHeight { get; set; }
     public double postWidth { get; private set; }
@@ -1930,8 +1966,6 @@ namespace ASI_DOTNET
 
       // Set some defaults
       this.height = 42;
-      this.tierHeight = new double[2] { height - 18, height };
-      this.tiers = tierHeight.GetLength(0);
       this.postWidth = 1.5;
       this.railWidth = 1.5;
       this.defaultRailLength = 60;
@@ -1946,8 +1980,8 @@ namespace ASI_DOTNET
       //Path vertical orientation(theta in polar coordinates)
       this.pathVerticalAngle = Utils.PolarAngleTheta(pathSection);
 
-      // Kickplate defaults (only in flat sections)
-      if (Math.Round(Utils.ToDegrees(pathVerticalAngle), 0) == 0) this.kickPlate = true;
+      // Kickplate defaults (true in flat sections)
+      if (Math.Round(Utils.ToDegrees(pathVerticalAngle), 0) == 90) this.kickPlate = true;
       else this.kickPlate = false;
 
     }
@@ -1983,6 +2017,10 @@ namespace ASI_DOTNET
     }
 
     private void Calculations() {
+
+      // Tier heights
+      this.tierHeight = new double[2] { Math.Round(height / 2, 0) + railWidth, height };
+      this.tiers = tierHeight.GetLength(0);
 
       // Calculate rail sections and length (per section)
       this.sectionRails = Math.Max(1, Math.Round(pathSection.Length / (defaultRailLength - postWidth)));
