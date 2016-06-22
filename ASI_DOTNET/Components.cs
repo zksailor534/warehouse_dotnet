@@ -1871,10 +1871,10 @@ namespace ASI_DOTNET
                   "\nCannot be greater than 60 inches");
                 return;
               }
-              else if (heightResult.Value < 36)
+              else if (heightResult.Value < 30)
               {
                 Application.ShowAlertDialog("Invalid rail height: too low." +
-                  "\nCannot be less than 36 inches");
+                  "\nCannot be less than 30 inches");
                 return;
               }
               else
