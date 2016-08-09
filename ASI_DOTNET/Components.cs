@@ -1684,6 +1684,7 @@ namespace ASI_DOTNET
       // postOrientation = 1 --> left of section line
       // postOrientation = -1 --> right of section line
       this.height = 42;
+      this.defaultRailLength = 96;
       this.postOrientation = 1;
       this.postWidth = 1.5;
       this.kickPlate = true;
@@ -1791,6 +1792,9 @@ namespace ASI_DOTNET
           // Rail height option
           section.height = height;
 
+          // Default rail length option
+          section.defaultRailLength = defaultRailLength;
+
           // First and last post options
           if (!firstPost[s]) section.firstPost = false;
           if (!lastPost[s]) section.lastPost = false;
@@ -1817,6 +1821,7 @@ namespace ASI_DOTNET
       bool? kickPlate = null;
       double? orientation = null;
       double? railHeight = null;
+      double? railLength = null;
 
       // Get the current document and database, and start a transaction
       Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -1825,8 +1830,8 @@ namespace ASI_DOTNET
       // Prepare prompt for points
       PromptPointResult ptRes;
       PromptPointOptions ptOpts = new PromptPointOptions("");
-      ptOpts.SetMessageAndKeywords("\nEnter point or [Height/Kickplate/PostOrientation]",
-          "Height Kickplate PostOrientation");
+      ptOpts.SetMessageAndKeywords("\nEnter point or [Height/Length/Kickplate/PostOrientation]",
+          "Height Length Kickplate PostOrientation");
       ptOpts.AllowNone = true;
 
       // Prepare prompt for kickplates
@@ -1856,6 +1861,15 @@ namespace ASI_DOTNET
       heightOpts.AllowNone = false;
       heightOpts.AllowZero = false;
 
+      // Prepare prompt for rail length
+      PromptDoubleResult lengthResult;
+      PromptDoubleOptions lengthOpts = new PromptDoubleOptions("");
+      lengthOpts.Message = "\nEnter the target rail length: ";
+      lengthOpts.DefaultValue = 96;
+      lengthOpts.AllowNegative = false;
+      lengthOpts.AllowNone = false;
+      lengthOpts.AllowZero = false;
+
       do
       {
         ptRes = doc.Editor.GetPoint(ptOpts);
@@ -1881,6 +1895,10 @@ namespace ASI_DOTNET
               {
                 railHeight = heightResult.Value;
               }
+              break;
+            case "Length":
+              lengthResult = doc.Editor.GetDouble(lengthOpts);
+              railLength = lengthResult.Value;
               break;
             case "KickPlate":
               kickplateRes = doc.Editor.GetKeywords(kickplateOpts);
@@ -1912,6 +1930,9 @@ namespace ASI_DOTNET
 
       // Deal with rail height input
       if (railHeight.HasValue) rail.height = (double)railHeight;
+
+      // Deal with rail length input
+      if (railLength.HasValue) rail.defaultRailLength = (double)railLength;
 
       // Deal with kickplate input
       if (kickPlate.HasValue) rail.kickPlate = (bool)kickPlate;
@@ -1968,7 +1989,7 @@ namespace ASI_DOTNET
       this.height = 42;
       this.postWidth = 1.5;
       this.railWidth = 1.5;
-      this.defaultRailLength = 60;
+      this.defaultRailLength = 96;
       this.kickplateHeight = 4;
       this.kickplateWidth = 0.25;
       this.firstPost = true;
